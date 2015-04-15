@@ -1,5 +1,6 @@
 package fr.upem.net.tcp.http;
 
+import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.util.*;
 
@@ -20,6 +21,8 @@ public class HTTPHeader {
 	public static final Set<String> SUPPORTED_VERSIONS = Collections
 			.unmodifiableSet(new HashSet<>(Arrays
 					.asList(LIST_SUPPORTED_VERSIONS)));
+
+	private static final Charset CHARSET = Charset.forName("ASCII");
 
 	private final String response;
 	private final String version;
@@ -134,8 +137,12 @@ public class HTTPHeader {
 	}
 
 	public String toString() {
-		return response + "\n" + version + " " + code + "\n"
+		return response + "\r\n" + version + " " + code + "\r\n"
 				+ fields.toString();
+	}
+
+	public byte[] toBytes() {
+		return CHARSET.encode(toString()).array();
 	}
 
 }

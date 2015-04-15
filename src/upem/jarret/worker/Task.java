@@ -11,7 +11,21 @@ public class Task {
 		URLClassLoader classLoader = new URLClassLoader(urls);
 	}
 
-	public static Task empty() {
-		return new Task();
+	/**
+	 * Compute task.
+	 */
+	public void compute() {
+		// TODO Auto-generated method stub
+
+	}
+
+	/**
+	 * Get the JSon formated result of the task.
+	 * 
+	 * @return Result, ready to be sent to server.
+	 */
+	public byte[] getResult() {
+		// TODO Auto-generated method stub
+		return null;
 	}
 }

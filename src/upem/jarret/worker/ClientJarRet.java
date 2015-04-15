@@ -1,20 +1,14 @@
 package upem.jarret.worker;
 
-import java.io.BufferedReader;
-import java.io.DataOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.PrintStream;
-import java.net.HttpURLConnection;
 import java.net.InetSocketAddress;
-import java.net.MalformedURLException;
-import java.net.ProtocolException;
-import java.net.URL;
+import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
-import java.util.Scanner;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 
 import com.fasterxml.jackson.core.JsonFactory;
@@ -22,8 +16,11 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import fr.upem.net.tcp.http.HTTPHeader;
+
 public class ClientJarRet {
 	private static final long TIMEOUT = 1000;
+	private static final int BUFFER_SIZE = 4096;
 
 	public static void main(String[] args) throws IOException {
 		if (3 != args.length) {
@@ -34,18 +31,6 @@ public class ClientJarRet {
 				Integer.parseInt(args[2]));
 
 		client.launch();
-
-		try (Scanner scanner = new Scanner(System.in)) {
-			while (scanner.hasNext()) {
-				try {
-					Task task = client.newTask();
-					client.compute(task);
-				} catch (IOException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace(System.err);
-				}
-			}
-		}
 	}
 
 	/**
@@ -65,22 +50,28 @@ public class ClientJarRet {
 		out.println("Usage: ClientJarRet <clientID> <serverAddress> <serverPort>\n");
 	}
 
-	private final SocketChannel socketChannel;
 	private final Selector selector;
 	private final Set<SelectionKey> selectedKeys;
+	private final ByteBuffer bb;
+	private Task task;
 
 	public ClientJarRet(String clientID, String address, int port)
 			throws IOException {
 
-		socketChannel = SocketChannel.open();
+		SocketChannel socketChannel = SocketChannel.open();
 		socketChannel.bind(new InetSocketAddress(address, port));
 		selector = Selector.open();
 		selectedKeys = selector.selectedKeys();
+		socketChannel.register(selector, SelectionKey.OP_ACCEPT);
+		bb = ByteBuffer.allocate(BUFFER_SIZE);
 	}
 
+	/**
+	 * Start the client.
+	 * 
+	 * @throws IOException
+	 */
 	public void launch() throws IOException {
-		socketChannel.configureBlocking(false);
-		socketChannel.register(selector, SelectionKey.OP_ACCEPT);
 		Set<SelectionKey> selectedKeys = selector.selectedKeys();
 		while (!Thread.interrupted()) {
 			selector.select(TIMEOUT);
@@ -89,6 +80,9 @@ public class ClientJarRet {
 		}
 	}
 
+	/**
+	 * Compute selected channels.
+	 */
 	private void processSelectedKeys() {
 		for (SelectionKey key : selectedKeys) {
 			if (key.isValid() && key.isWritable()) {
@@ -114,11 +108,41 @@ public class ClientJarRet {
 		}
 	}
 
+	/**
+	 * Read channel of key.
+	 * 
+	 * @param key
+	 *            - selected key containing a SocketChannel.
+	 * @throws IOException
+	 */
 	private void doRead(SelectionKey key) throws IOException {
 		// TODO Auto-generated method stub
-
+		if (hasTask()) {
+			try {
+				task = newTask((SocketChannel) key.channel());
+			} catch (NoTaskException e) {
+				long time;
+				while (e.getUntil() > (time = System.currentTimeMillis())) {
+					try {
+						Thread.sleep(e.getUntil() - time);
+					} catch (InterruptedException e1) {
+						// TODO Auto-generated catch block
+						e1.printStackTrace();
+					}
+				}
+			}
+			task.compute();
+			return;
+		}
 	}
 
+	/**
+	 * Close channel of the key.
+	 * 
+	 * @param key
+	 *            - Selected key containing an opened channel.
+	 * @throws IOException
+	 */
 	private void close(SelectionKey key) throws IOException {
 		System.out.println("Connexion "
 				+ ((SocketChannel) key.channel()).getRemoteAddress()
@@ -126,29 +150,80 @@ public class ClientJarRet {
 		key.channel().close();
 	}
 
+	/**
+	 * Write into key's channel.
+	 * 
+	 * @param key
+	 *            - Selected key containing a channel.
+	 * @throws IOException
+	 */
 	private void doWrite(SelectionKey key) throws IOException {
-		// TODO Auto-generated method stub
-
+		// No task computing
+		if (hasTask()) {
+			requestNewTask((SocketChannel) key.channel());
+			return;
+		}
+		// Task done
+		sendResultAndReset((SocketChannel) key.channel());
 	}
 
-	private Task newTask() throws IOException {
-		HttpURLConnection connection = getNewTaskRequest();
+	/**
+	 * Check if there is a task.
+	 * 
+	 * @return
+	 */
+	private boolean hasTask() {
+		return task == null;
+	}
 
-		// Send request
-		DataOutputStream wr = new DataOutputStream(connection.getOutputStream());
-		wr.flush();
-		wr.close();
+	/**
+	 * Send task's result to the server through channel. And reset task value.
+	 * 
+	 * @param channel
+	 *            - Server channel.
+	 * @throws IOException
+	 */
+	private void sendResultAndReset(SocketChannel channel) throws IOException {
+		byte result[] = task.getResult();
+		Map<String, String> fields = new HashMap<>();
+		fields.put("Host", channel.getRemoteAddress().toString());
+		fields.put("Content-Type", "application/json");
+		fields.put("Content-Length", result.length + "");
+		HTTPHeader header = HTTPHeader.create("POST Answer HTTP/1.1", fields);
+		bb.put(header.toBytes());
+		bb.put(result);
+		bb.flip();
+		channel.write(bb);
+		task = null;
+	}
 
-		// Get Response
-		InputStream is = connection.getInputStream();
-		BufferedReader rd = new BufferedReader(new InputStreamReader(is));
-		String line;
-		StringBuilder responseBuilder = new StringBuilder();
-		while ((line = rd.readLine()) != null) {
-			responseBuilder.append(line);
-		}
-		rd.close();
-		String response = responseBuilder.toString();
+	/**
+	 * Send a request to get a new task.
+	 * 
+	 * @param channel
+	 *            - Server channel.
+	 * @throws IOException
+	 */
+	private void requestNewTask(SocketChannel channel) throws IOException {
+		Map<String, String> fields = new HashMap<>();
+		fields.put("Host", channel.getRemoteAddress().toString());
+		HTTPHeader header = HTTPHeader.create("Get Task HTTP/1.1", fields);
+		bb.put(header.toBytes());
+		bb.flip();
+		channel.write(bb);
+	}
+
+	/**
+	 * Get a task from server.
+	 * 
+	 * @return new Task
+	 * @throws IOException
+	 * @throws NoTaskException
+	 */
+	private Task newTask(SocketChannel channel) throws IOException,
+			NoTaskException {
+		// TODO Read from channel
+		String response = null;
 
 		ObjectMapper mapper = new ObjectMapper();
 		Task task;
@@ -160,25 +235,8 @@ public class ClientJarRet {
 			if (parser.nextValue() == null) {
 				throw new IllegalStateException("Empty response.");
 			}
-			int comeBackIn = parser.getIntValue();
-			// TODO
-			task = Task.empty();
+			throw new NoTaskException(parser.getIntValue());
 		}
 		return task;
-	}
-
-	private void compute(Task task) {
-		// TODO Auto-generated method stub
-
-	}
-
-	private HttpURLConnection getNewTaskRequest() throws MalformedURLException,
-			IOException, ProtocolException {
-		String address = socketChannel.getRemoteAddress().toString();
-		URL url = new URL(address);
-		HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-		connection.setRequestMethod("GET Task HTTP/1.1");
-		connection.setRequestProperty("Host", address);
-		return connection;
 	}
 }
