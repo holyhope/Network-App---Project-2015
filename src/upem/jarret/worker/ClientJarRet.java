@@ -16,6 +16,7 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import fr.upem.net.tcp.http.HTTPException;
 import fr.upem.net.tcp.http.HTTPHeader;
 
 public class ClientJarRet {
@@ -52,7 +53,7 @@ public class ClientJarRet {
 
 	private final Selector selector;
 	private final Set<SelectionKey> selectedKeys;
-	private final ByteBuffer bb;
+	private final ByteBuffer bb = ByteBuffer.allocate(BUFFER_SIZE);
 	private Task task;
 
 	public ClientJarRet(String clientID, String address, int port)
@@ -63,7 +64,6 @@ public class ClientJarRet {
 		selector = Selector.open();
 		selectedKeys = selector.selectedKeys();
 		socketChannel.register(selector, SelectionKey.OP_ACCEPT);
-		bb = ByteBuffer.allocate(BUFFER_SIZE);
 	}
 
 	/**
@@ -116,24 +116,45 @@ public class ClientJarRet {
 	 * @throws IOException
 	 */
 	private void doRead(SelectionKey key) throws IOException {
-		// TODO Auto-generated method stub
-		if (hasTask()) {
+		if (!hasTask()) {
+			HTTPHeader header;
 			try {
-				task = newTask((SocketChannel) key.channel());
+				header = readHeader((SocketChannel) key.channel());
+			} catch (IllegalStateException e) {
+				// Header is not fully received
+				return;
+			} catch (HTTPException e) {
+				//TODO reset client
+				key.interestOps(SelectionKey.OP_WRITE);
+				return;
+			}
+			try {
+				task = newTask(header, (SocketChannel) key.channel());
+			} catch (IllegalStateException e) {
+				// Content is not fully received
+				return;
 			} catch (NoTaskException e) {
+				// No task to work on
 				long time;
 				while (e.getUntil() > (time = System.currentTimeMillis())) {
 					try {
 						Thread.sleep(e.getUntil() - time);
 					} catch (InterruptedException e1) {
-						// TODO Auto-generated catch block
 						e1.printStackTrace();
 					}
 				}
+				return;
 			}
 			task.compute();
-			return;
+		} else {
+			// TODO Get error code from server (200 or 400).
 		}
+	}
+
+	private HTTPHeader readHeader(SocketChannel channel) throws IOException,
+			IllegalStateException {
+		channel.read(bb);
+		return HTTPHeader.fromByteBuffer(bb);
 	}
 
 	/**
@@ -216,14 +237,22 @@ public class ClientJarRet {
 	/**
 	 * Get a task from server.
 	 * 
+	 * @param header
+	 * 
+	 * @param channel
+	 * 
 	 * @return new Task
 	 * @throws IOException
 	 * @throws NoTaskException
 	 */
-	private Task newTask(SocketChannel channel) throws IOException,
-			NoTaskException {
-		// TODO Read from channel
-		String response = null;
+	private Task newTask(HTTPHeader header, SocketChannel channel)
+			throws IOException, NoTaskException, IllegalStateException {
+		channel.read(bb);
+		if (bb.limit() < header.getContentLength()) {
+			throw new IllegalStateException("Response not fully received");
+		}
+
+		String response = header.getCharset().decode(bb).toString();
 
 		ObjectMapper mapper = new ObjectMapper();
 		Task task;

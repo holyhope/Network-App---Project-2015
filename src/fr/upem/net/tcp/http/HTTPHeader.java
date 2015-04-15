@@ -59,6 +59,75 @@ public class HTTPHeader {
 		return new HTTPHeader(response, version, code, fieldsCopied);
 	}
 
+	public static HTTPHeader fromByteBuffer(ByteBuffer bb)
+			throws HTTPException, IllegalStateException {
+		String response = null;
+		final Map<String, String> fields = new HashMap<>();
+
+		int realLimit = -1;
+
+		final int limit = bb.limit();
+		boolean carret = false;
+		boolean readingKey = true;
+		StringBuilder key = new StringBuilder();
+		StringBuilder value = new StringBuilder();
+		for (int i = 0; i < limit; i++) {
+			final char actualChar = bb.getChar(i);
+			if (carret && actualChar == '\n') {
+				// If empty line
+				if (key.length() == 0) {
+					realLimit = i;
+					break;
+				}
+
+				// If start of parsing
+				if (fields.size() == 0) {
+					if (value.length() > 0) {
+						throw new HTTPException("No response found.");
+					}
+					response = key.toString();
+					continue;
+				}
+
+				// Otherwise key is not empty, so add it to header.
+				fields.put(key.toString(), value.toString());
+
+				// Reset key, value and flags
+				key = new StringBuilder();
+				value = new StringBuilder();
+				readingKey = true;
+				carret = false;
+
+				continue;
+			}
+			carret = actualChar == '\r';
+
+			if (readingKey && actualChar == ':') {
+				readingKey = false;
+				continue;
+			}
+
+			if (readingKey) {
+				key.append(actualChar);
+			} else {
+				value.append(actualChar);
+			}
+		}
+
+		if (realLimit < 0) {
+			throw new IllegalStateException("No HTTP header found");
+		}
+
+		if (response == null) {
+			throw new IllegalStateException("No HTTP header found");
+		}
+
+		bb.position(realLimit);
+		bb.compact();
+
+		return create(response, fields);
+	}
+
 	public String getResponse() {
 		return response;
 	}
