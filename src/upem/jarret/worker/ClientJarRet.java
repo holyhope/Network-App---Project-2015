@@ -7,6 +7,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
+import java.nio.charset.Charset;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -25,6 +26,7 @@ import fr.upem.net.tcp.http.HTTPHeader;
 public class ClientJarRet {
 	private static final long TIMEOUT = 1000;
 	private static final int BUFFER_SIZE = 4096;
+	private static final Charset CHARSET_UTF8 = Charset.forName("utf-8");
 
 	public static void main(String[] args) throws IOException {
 		if (3 != args.length) {
@@ -157,9 +159,16 @@ public class ClientJarRet {
 				}
 				return;
 			}
+			Worker worker;
 			try {
-				Worker worker = task.getWorker();
-				// TODO compute task and write response in bb. Then set write mode.
+				worker = task.getWorker();
+				Long taskNumber = Long.parseLong(task.getJobId());
+				String result = worker.compute(taskNumber);
+				
+				ByteBuffer resultBb = CHARSET_UTF8.encode(result);
+				// TODO call method addSendHeader
+				// TODO build answer
+				
 			} catch (ClassNotFoundException | IllegalAccessException
 					| InstantiationException e) {
 				// TODO Auto-generated catch block
