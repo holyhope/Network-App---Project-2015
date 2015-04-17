@@ -16,7 +16,11 @@ import upem.jarret.task.NoTaskException;
 import upem.jarret.task.Task;
 
 import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonGenerationException;
+import com.fasterxml.jackson.core.JsonLocation;
+import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -161,14 +165,25 @@ public class ClientJarRet {
 			}
 			Worker worker;
 			try {
+				boolean hasError = false;
 				worker = task.getWorker();
-				Long taskNumber = Long.parseLong(task.getJobId());
+				int taskNumber = Integer.parseInt(task.getJobId());
 				String result = worker.compute(taskNumber);
-				
+				if(null == result) {
+					hasError = true;
+					result = "Computation error";
+				} else {
+					try {
+						checkResponse(result);
+					} catch (JsonMappingException | JsonGenerationException e) {
+						hasError = true;
+						result = e.getLocalizedMessage();
+					}
+				}
 				ByteBuffer resultBb = CHARSET_UTF8.encode(result);
 				// TODO call method addSendHeader
-				// TODO build answer
-				
+				// TODO build answer depending on hasError value
+
 			} catch (ClassNotFoundException | IllegalAccessException
 					| InstantiationException e) {
 				// TODO Auto-generated catch block
@@ -301,5 +316,30 @@ public class ClientJarRet {
 		}
 
 		return task;
+	}
+
+	public void checkResponse(final String json)
+			throws JsonGenerationException, JsonMappingException {
+		boolean valid = false;
+		boolean isNested = false;
+		try {
+			JsonFactory factory = new JsonFactory();
+			JsonParser parser = factory.createParser(json);
+			JsonToken jsonToken;
+			while ((jsonToken = parser.nextToken()) != null) {
+				if (jsonToken.isStructStart() && isNested) {
+					throw new JsonMappingException("Answer is nested");
+				}
+			}
+			valid = true;
+		} catch (JsonParseException jpe) {
+			jpe.printStackTrace();
+		} catch (IOException ioe) {
+			ioe.printStackTrace();
+		}
+		if (!valid) {
+			throw new JsonGenerationException("Answer is nested");
+		}
+
 	}
 }
