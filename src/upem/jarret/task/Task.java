@@ -1,6 +1,8 @@
 package upem.jarret.task;
 
 import java.net.MalformedURLException;
+import java.util.HashMap;
+import java.util.Map;
 
 import upem.jarret.worker.Worker;
 import upem.jarret.worker.WorkerFactory;
@@ -12,16 +14,6 @@ public class Task {
 	private String WorkerClassName;
 	private String Task;
 
-	/**
-	 * Get the JSon formated result of the task.
-	 * 
-	 * @return Result, ready to be sent to server.
-	 */
-	public byte[] getResult() {
-		// TODO Auto-generated method stub
-		return null;
-	}
-	
 	public String getJobId() {
 		return JobId;
 	}
@@ -30,5 +22,15 @@ public class Task {
 			ClassNotFoundException, IllegalAccessException,
 			InstantiationException {
 		return WorkerFactory.getWorker(WorkerURL, WorkerClassName);
+	}
+	
+	public Map<String,String> buildMap() {
+		HashMap<String, String> map = new HashMap<>();
+		map.put("JobId", JobId);
+		map.put("WorkerVersion", WorkerVersion);
+		map.put("WorkerURL", WorkerURL);
+		map.put("WorkerClassName", WorkerClassName);
+		map.put("Task", Task);
+		return map;
 	}
 }

@@ -3,6 +3,7 @@ package upem.jarret.worker;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.net.InetSocketAddress;
+import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
@@ -17,9 +18,9 @@ import upem.jarret.task.Task;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerationException;
-import com.fasterxml.jackson.core.JsonLocation;
 import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -40,13 +41,7 @@ public class ClientJarRet {
 		ClientJarRet client = new ClientJarRet(args[0], args[1],
 				Integer.parseInt(args[2]));
 
-		try {
-			client.launch();
-		} catch (ClassNotFoundException | IllegalAccessException
-				| InstantiationException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
+		client.launch();
 	}
 
 	/**
@@ -69,6 +64,7 @@ public class ClientJarRet {
 	private final Selector selector;
 	private final Set<SelectionKey> selectedKeys;
 	private final ByteBuffer bb = ByteBuffer.allocate(BUFFER_SIZE);
+	private final String clientID;
 	private Task task;
 
 	public ClientJarRet(String clientID, String address, int port)
@@ -78,6 +74,7 @@ public class ClientJarRet {
 		socketChannel.bind(new InetSocketAddress(address, port));
 		selector = Selector.open();
 		selectedKeys = selector.selectedKeys();
+		this.clientID = clientID;
 		socketChannel.register(selector, SelectionKey.OP_ACCEPT);
 	}
 
@@ -89,11 +86,14 @@ public class ClientJarRet {
 	 * @throws IllegalAccessException
 	 * @throws ClassNotFoundException
 	 */
-	public void launch() throws IOException, ClassNotFoundException,
-			IllegalAccessException, InstantiationException {
+	public void launch() {
 		Set<SelectionKey> selectedKeys = selector.selectedKeys();
 		while (!Thread.interrupted()) {
-			selector.select(TIMEOUT);
+			try {
+				selector.select(TIMEOUT);
+			} catch (IOException e) {
+				e.printStackTrace(System.err);
+			}
 			processSelectedKeys();
 			selectedKeys.clear();
 		}
@@ -135,6 +135,7 @@ public class ClientJarRet {
 	 * @throws IOException
 	 */
 	private void doRead(SelectionKey key) throws IOException {
+		// No task yet
 		if (!hasTask()) {
 			HTTPHeader header;
 			try {
@@ -164,54 +165,88 @@ public class ClientJarRet {
 				return;
 			}
 
+			Worker worker;
 			try {
-				boolean hasError = false;
-				Worker worker = task.getWorker();
-				int taskNumber = Integer.parseInt(task.getJobId());
-				String result = null;
-				try {
-					result = worker.compute(taskNumber);
-				} catch (Exception e) {
-					hasError = true;
-					result = "Computation error";
-				}
-				if (null == result) {
-					hasError = true;
-					result = "Computation error";
-				} else {
-					try {
-						checkResponse(result);
-					} catch (JsonMappingException | JsonGenerationException e) {
-						hasError = true;
-						result = e.getLocalizedMessage();
-					}
-				}
-				ByteBuffer resultBb = CHARSET_UTF8.encode(result);
-				addSendHeader((SocketChannel) key.channel(), resultBb.limit());
-				// TODO build answer depending on hasError value
-				// TODO write response in bb.
-				// TODO check length
-				// TODO check json format
-				// TODO check json values are not object
-				key.interestOps(SelectionKey.OP_WRITE);
+				worker = task.getWorker();
 			} catch (ClassNotFoundException | IllegalAccessException
 					| InstantiationException e) {
-				e.printStackTrace();
-				// TODO send Computing error
+				e.printStackTrace(System.err);
+				resetClient(key);
+				return;
 			}
-		} else {
-			// TODO Get code from server (200 or 400).
+			int taskNumber = Integer.parseInt(task.getJobId());
+			String result = null;
+			try {
+				result = worker.compute(taskNumber);
+			} catch (Exception e) {
+				setBufferError(key, "Computation error");
+				return;
+			}
+			if (null == result) {
+				setBufferError(key, "Computation error");
+				return;
+			} else {
+				try {
+					checkResponse(result);
+				} catch (JsonMappingException e) {
+					setBufferError(key, "Answer is nested");
+					return;
+				} catch (JsonGenerationException e) {
+					setBufferError(key, "Answer is not valid JSON");
+					return;
+				}
+
+			}
+			setBufferAnswer(key, result);
+			return;
 		}
+		// Answer sent
+		// TODO Get code from server (200 or 400).
+		resetClient(key);
+	}
+
+	private void setBufferError(SelectionKey key, String errorMessage)
+			throws IOException {
+		ByteBuffer resultBb = getContentError(errorMessage);
+		addSendHeader((SocketChannel) key.channel(), resultBb.limit());
+		key.interestOps(SelectionKey.OP_WRITE);
+	}
+
+	private void setBufferAnswer(SelectionKey key, String answer)
+			throws IOException {
+		try {
+			ByteBuffer resultBb = getContent(answer);
+			addSendHeader((SocketChannel) key.channel(), resultBb.limit());
+		} catch (BufferOverflowException e) {
+			bb.clear();
+			setBufferError(key, "Too Long");
+		}
+		key.interestOps(SelectionKey.OP_WRITE);
+	}
+
+	private ByteBuffer getContent(String result) throws JsonProcessingException {
+		Map<String, String> map = task.buildMap();
+		map.put("ClientId", clientID);
+		map.put("Error", result);
+		ObjectMapper mapper = new ObjectMapper();
+		return CHARSET_UTF8.encode(mapper.writeValueAsString(map));
+	}
+
+	private ByteBuffer getContentError(String error)
+			throws JsonProcessingException {
+		Map<String, String> map = task.buildMap();
+		map.put("ClientId", clientID);
+		map.put("Error", error);
+		ObjectMapper mapper = new ObjectMapper();
+		return CHARSET_UTF8.encode(mapper.writeValueAsString(map));
 	}
 
 	private void addSendHeader(SocketChannel channel, int size)
 			throws IOException {
 		Map<String, String> fields = new HashMap<>();
 		fields.put("Host", channel.getRemoteAddress().toString());
-
-		// TODO use charset constant's name
-		fields.put("Content-Type", "application/json; charset=utf-8");
-
+		fields.put("Content-Type",
+				"application/json; charset=" + CHARSET_UTF8.name());
 		fields.put("Content-Length", size + "");
 		HTTPHeader header = HTTPHeader.create("POST Answer HTTP/1.1", fields);
 		bb.put(header.toBytes());
@@ -250,14 +285,19 @@ public class ClientJarRet {
 	 * @throws IOException
 	 */
 	private void doWrite(SelectionKey key) throws IOException {
+		SocketChannel channel = (SocketChannel) key.channel();
 		// No task computing
 		if (!hasTask()) {
-			requestNewTask((SocketChannel) key.channel());
+			requestNewTask(channel);
 			return;
 		}
 		// Task done
-		sendResultAndReset((SocketChannel) key.channel());
-		resetClient(key);
+		bb.flip();
+		channel.write(bb);
+		bb.compact();
+		if (!bb.hasRemaining()) {
+			key.interestOps(SelectionKey.OP_READ);
+		}
 	}
 
 	/**
@@ -267,21 +307,6 @@ public class ClientJarRet {
 	 */
 	private boolean hasTask() {
 		return task == null;
-	}
-
-	/**
-	 * Send task's result to the server through channel. And reset task value.
-	 * 
-	 * @param channel
-	 *            - Server channel.
-	 * @throws IOException
-	 */
-	private void sendResultAndReset(SocketChannel channel) throws IOException {
-		byte result[] = task.getResult();
-		bb.put(result);
-		bb.flip();
-		channel.write(bb);
-		task = null;
 	}
 
 	/**
@@ -336,7 +361,7 @@ public class ClientJarRet {
 		return task;
 	}
 
-	public void checkResponse(final String json)
+	private void checkResponse(final String json)
 			throws JsonGenerationException, JsonMappingException {
 		boolean valid = false;
 		boolean isNested = false;
@@ -356,7 +381,7 @@ public class ClientJarRet {
 			ioe.printStackTrace();
 		}
 		if (!valid) {
-			throw new JsonGenerationException("Answer is nested");
+			throw new JsonGenerationException("Answer is not valid JSON");
 		}
 
 	}
