@@ -21,6 +21,10 @@ public class Task {
 		// TODO Auto-generated method stub
 		return null;
 	}
+	
+	public String getJobId() {
+		return JobId;
+	}
 
 	public Worker getWorker() throws MalformedURLException,
 			ClassNotFoundException, IllegalAccessException,

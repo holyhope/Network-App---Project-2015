@@ -4,10 +4,10 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.channels.SelectableChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
+import java.nio.charset.Charset;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -26,6 +26,7 @@ import fr.upem.net.tcp.http.HTTPHeader;
 public class ClientJarRet {
 	private static final long TIMEOUT = 1000;
 	private static final int BUFFER_SIZE = 4096;
+	private static final Charset CHARSET_UTF8 = Charset.forName("utf-8");
 
 	public static void main(String[] args) throws IOException {
 		if (3 != args.length) {
@@ -161,8 +162,10 @@ public class ClientJarRet {
 
 			try {
 				Worker worker = task.getWorker();
-				// TODO compute task.
-				addSendHeader((SocketChannel) key.channel(), 0 /* Result length */);
+				String result = worker.compute(Long.parseLong(task.getJobId()));
+				ByteBuffer resultBb = CHARSET_UTF8.encode(result);
+				addSendHeader((SocketChannel) key.channel(), resultBb.limit());
+				// TODO build answer
 				// TODO write response in bb.
 				// TODO check length
 				// TODO check json format
