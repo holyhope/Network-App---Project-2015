@@ -11,6 +11,9 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
+import upem.jarret.task.NoTaskException;
+import upem.jarret.task.Task;
+
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.JsonMappingException;
@@ -31,7 +34,13 @@ public class ClientJarRet {
 		ClientJarRet client = new ClientJarRet(args[0], args[1],
 				Integer.parseInt(args[2]));
 
-		client.launch();
+		try {
+			client.launch();
+		} catch (ClassNotFoundException | IllegalAccessException
+				| InstantiationException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 	}
 
 	/**
@@ -70,8 +79,12 @@ public class ClientJarRet {
 	 * Start the client.
 	 * 
 	 * @throws IOException
+	 * @throws InstantiationException
+	 * @throws IllegalAccessException
+	 * @throws ClassNotFoundException
 	 */
-	public void launch() throws IOException {
+	public void launch() throws IOException, ClassNotFoundException,
+			IllegalAccessException, InstantiationException {
 		Set<SelectionKey> selectedKeys = selector.selectedKeys();
 		while (!Thread.interrupted()) {
 			selector.select(TIMEOUT);
@@ -92,8 +105,8 @@ public class ClientJarRet {
 					try {
 						close(key);
 					} catch (IOException e1) {
-						// TODO Auto-generated catch block
 						e1.printStackTrace();
+						resetClient(key);
 					}
 				}
 			}
@@ -101,8 +114,8 @@ public class ClientJarRet {
 				try {
 					doRead(key);
 				} catch (IOException e) {
-					// TODO Auto-generated catch block
 					e.printStackTrace();
+					resetClient(key);
 				}
 			}
 		}
@@ -124,8 +137,7 @@ public class ClientJarRet {
 				// Header is not fully received
 				return;
 			} catch (HTTPException e) {
-				//TODO reset client
-				key.interestOps(SelectionKey.OP_WRITE);
+				resetClient(key);
 				return;
 			}
 			try {
@@ -145,10 +157,22 @@ public class ClientJarRet {
 				}
 				return;
 			}
-			task.compute();
+			try {
+				Worker worker = task.getWorker();
+				// TODO compute task and write response in bb. Then set write mode.
+			} catch (ClassNotFoundException | IllegalAccessException
+					| InstantiationException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
 		} else {
-			// TODO Get error code from server (200 or 400).
+			// TODO Get code from server (200 or 400).
 		}
+	}
+
+	private void resetClient(SelectionKey key) {
+		task = null;
+		key.interestOps(SelectionKey.OP_WRITE);
 	}
 
 	private HTTPHeader readHeader(SocketChannel channel) throws IOException,
@@ -266,6 +290,7 @@ public class ClientJarRet {
 			}
 			throw new NoTaskException(parser.getIntValue());
 		}
+
 		return task;
 	}
 }
