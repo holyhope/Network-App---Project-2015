@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
+import java.nio.channels.SelectableChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
@@ -157,17 +158,37 @@ public class ClientJarRet {
 				}
 				return;
 			}
+
 			try {
 				Worker worker = task.getWorker();
-				// TODO compute task and write response in bb. Then set write mode.
+				// TODO compute task.
+				addSendHeader((SocketChannel) key.channel(), 0 /* Result length */);
+				// TODO write response in bb.
+				// TODO check length
+				// TODO check json format
+				// TODO check json values are not object
+				key.interestOps(SelectionKey.OP_WRITE);
 			} catch (ClassNotFoundException | IllegalAccessException
 					| InstantiationException e) {
-				// TODO Auto-generated catch block
 				e.printStackTrace();
+				// TODO send Computing error
 			}
 		} else {
 			// TODO Get code from server (200 or 400).
 		}
+	}
+
+	private void addSendHeader(SocketChannel channel, int size)
+			throws IOException {
+		Map<String, String> fields = new HashMap<>();
+		fields.put("Host", channel.getRemoteAddress().toString());
+
+		// TODO use charset constant's name
+		fields.put("Content-Type", "application/json; charset=utf-8");
+
+		fields.put("Content-Length", size + "");
+		HTTPHeader header = HTTPHeader.create("POST Answer HTTP/1.1", fields);
+		bb.put(header.toBytes());
 	}
 
 	private void resetClient(SelectionKey key) {
@@ -204,12 +225,13 @@ public class ClientJarRet {
 	 */
 	private void doWrite(SelectionKey key) throws IOException {
 		// No task computing
-		if (hasTask()) {
+		if (!hasTask()) {
 			requestNewTask((SocketChannel) key.channel());
 			return;
 		}
 		// Task done
 		sendResultAndReset((SocketChannel) key.channel());
+		resetClient(key);
 	}
 
 	/**
@@ -230,12 +252,6 @@ public class ClientJarRet {
 	 */
 	private void sendResultAndReset(SocketChannel channel) throws IOException {
 		byte result[] = task.getResult();
-		Map<String, String> fields = new HashMap<>();
-		fields.put("Host", channel.getRemoteAddress().toString());
-		fields.put("Content-Type", "application/json");
-		fields.put("Content-Length", result.length + "");
-		HTTPHeader header = HTTPHeader.create("POST Answer HTTP/1.1", fields);
-		bb.put(header.toBytes());
 		bb.put(result);
 		bb.flip();
 		channel.write(bb);
