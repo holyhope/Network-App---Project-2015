@@ -218,15 +218,22 @@ public class ClientJarRet {
 		case 200:
 			break;
 		default:
-			System.err.println("Erreur (code " + code + ")");
-			System.out.println("Réessayer ? (O/N)");
-			// Let user choose if he wants to retry.
+			System.err.println("Error (code " + code + ")");
 			try (Scanner scanner = new Scanner(System.in)) {
 				while (scanner.hasNextLine()) {
-					if (scanner.nextLine().equalsIgnoreCase("o")) {
-						return;
-					} else if (scanner.nextLine().equalsIgnoreCase("n")) {
-						break;
+					// Let user choose if he wants to retry.
+					System.out.println("Try again ? (" + YesNo.YES + "/"
+							+ YesNo.NO + ")");
+					try {
+						YesNo yesNo = YesNo.fromString(scanner.nextLine());
+						if (yesNo.equals(YesNo.YES)) {
+							// Stop before resetClient
+							return;
+						} else if (yesNo.equals(YesNo.NO)) {
+							break;
+						}
+					} catch (IllegalArgumentException e) {
+						// Nothing to do, user did not write Yes or No
 					}
 				}
 			}
