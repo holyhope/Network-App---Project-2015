@@ -11,6 +11,7 @@ import java.nio.channels.SocketChannel;
 import java.nio.charset.Charset;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Scanner;
 import java.util.Set;
 
 import upem.jarret.task.NoTaskException;
@@ -201,7 +202,36 @@ public class ClientJarRet {
 			return;
 		}
 		// Answer sent
-		// TODO Get code from server (200 or 400).
+		HTTPHeader header;
+		try {
+			header = readHeader((SocketChannel) key.channel());
+		} catch (IllegalStateException e) {
+			// Header is not fully received
+			return;
+		} catch (HTTPException e) {
+			resetClient(key);
+			return;
+		}
+		// Get code from server (200 or 400).
+		int code = header.getCode();
+		switch (code) {
+		case 200:
+			break;
+		default:
+			System.err.println("Erreur (code " + code + ")");
+			System.out.println("Réessayer ? (O/N)");
+			// Let user choose if he wants to retry.
+			try (Scanner scanner = new Scanner(System.in)) {
+				while (scanner.hasNextLine()) {
+					if (scanner.nextLine().equalsIgnoreCase("o")) {
+						return;
+					} else if (scanner.nextLine().equalsIgnoreCase("n")) {
+						break;
+					}
+				}
+			}
+			break;
+		}
 		resetClient(key);
 	}
 
