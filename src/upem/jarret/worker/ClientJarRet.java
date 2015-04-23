@@ -3,34 +3,37 @@ package upem.jarret.worker;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.net.InetSocketAddress;
+import java.net.MalformedURLException;
 import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
-import java.nio.channels.SelectionKey;
-import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 import java.nio.charset.Charset;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Scanner;
-import java.util.Set;
 
 import upem.jarret.task.NoTaskException;
 import upem.jarret.task.Task;
 
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerationException;
 import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.JsonToken;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.introspect.VisibilityChecker;
 
 import fr.upem.net.tcp.http.HTTPException;
 import fr.upem.net.tcp.http.HTTPHeader;
+import fr.upem.net.tcp.http.HTTPReader;
 
 public class ClientJarRet {
-	private static final long TIMEOUT = 1000;
+	private final SocketChannel sc;
+	private final InetSocketAddress serverAddress;
 	private static final int BUFFER_SIZE = 4096;
 	private static final Charset CHARSET_UTF8 = Charset.forName("utf-8");
 
@@ -62,8 +65,6 @@ public class ClientJarRet {
 		out.println("Usage: ClientJarRet <clientID> <serverAddress> <serverPort>\n");
 	}
 
-	private final Selector selector;
-	private final Set<SelectionKey> selectedKeys;
 	private final ByteBuffer bb = ByteBuffer.allocate(BUFFER_SIZE);
 	private final String clientID;
 	private Task task;
@@ -71,12 +72,10 @@ public class ClientJarRet {
 	public ClientJarRet(String clientID, String address, int port)
 			throws IOException {
 
-		SocketChannel socketChannel = SocketChannel.open();
-		socketChannel.bind(new InetSocketAddress(address, port));
-		selector = Selector.open();
-		selectedKeys = selector.selectedKeys();
+		sc = SocketChannel.open();
+		serverAddress = new InetSocketAddress(address, port);
+		sc.connect(serverAddress);
 		this.clientID = clientID;
-		socketChannel.register(selector, SelectionKey.OP_ACCEPT);
 	}
 
 	/**
@@ -87,129 +86,30 @@ public class ClientJarRet {
 	 * @throws IllegalAccessException
 	 * @throws ClassNotFoundException
 	 */
-	public void launch() {
-		Set<SelectionKey> selectedKeys = selector.selectedKeys();
+	public void launch() throws IOException {
 		while (!Thread.interrupted()) {
-			try {
-				selector.select(TIMEOUT);
-			} catch (IOException e) {
-				e.printStackTrace(System.err);
+			if(isIdle()) {
+				initializeTaskAndCompute();
 			}
-			processSelectedKeys();
-			selectedKeys.clear();
+			bb.flip();
+			sc.write(bb);
+			bb.compact();
+			getAnswerAndReset();
 		}
+		close();
 	}
-
-	/**
-	 * Compute selected channels.
-	 */
-	private void processSelectedKeys() {
-		for (SelectionKey key : selectedKeys) {
-			if (key.isValid() && key.isWritable()) {
-				try {
-					doWrite(key);
-				} catch (IOException e) {
-					try {
-						close(key);
-					} catch (IOException e1) {
-						e1.printStackTrace();
-						resetClient(key);
-					}
-				}
-			}
-			if (key.isValid() && key.isReadable()) {
-				try {
-					doRead(key);
-				} catch (IOException e) {
-					e.printStackTrace();
-					resetClient(key);
-				}
-			}
-		}
-	}
-
-	/**
-	 * Read channel of key.
-	 * 
-	 * @param key
-	 *            - selected key containing a SocketChannel.
-	 * @throws IOException
-	 */
-	private void doRead(SelectionKey key) throws IOException {
-		// No task yet
-		if (!hasTask()) {
-			HTTPHeader header;
-			try {
-				header = readHeader((SocketChannel) key.channel());
-			} catch (IllegalStateException e) {
-				// Header is not fully received
-				return;
-			} catch (HTTPException e) {
-				resetClient(key);
-				return;
-			}
-			try {
-				task = newTask(header, (SocketChannel) key.channel());
-			} catch (IllegalStateException e) {
-				// Content is not fully received
-				return;
-			} catch (NoTaskException e) {
-				// No task to work on
-				long time;
-				while (e.getUntil() > (time = System.currentTimeMillis())) {
-					try {
-						Thread.sleep(e.getUntil() - time);
-					} catch (InterruptedException e1) {
-						e1.printStackTrace();
-					}
-				}
-				return;
-			}
-
-			Worker worker;
-			try {
-				worker = task.getWorker();
-			} catch (ClassNotFoundException | IllegalAccessException
-					| InstantiationException e) {
-				e.printStackTrace(System.err);
-				resetClient(key);
-				return;
-			}
-			int taskNumber = Integer.parseInt(task.getJobId());
-			String result = null;
-			try {
-				result = worker.compute(taskNumber);
-			} catch (Exception e) {
-				setBufferError(key, "Computation error");
-				return;
-			}
-			if (null == result) {
-				setBufferError(key, "Computation error");
-				return;
-			} else {
-				try {
-					checkResponse(result);
-				} catch (JsonMappingException e) {
-					setBufferError(key, "Answer is nested");
-					return;
-				} catch (JsonGenerationException e) {
-					setBufferError(key, "Answer is not valid JSON");
-					return;
-				}
-
-			}
-			setBufferAnswer(key, result);
-			return;
-		}
+	
+	private void getAnswerAndReset() throws IOException {
 		// Answer sent
+		HTTPReader reader = new HTTPReader(sc, bb);
 		HTTPHeader header;
 		try {
-			header = readHeader((SocketChannel) key.channel());
+			header = reader.readHeader();
 		} catch (IllegalStateException e) {
 			// Header is not fully received
 			return;
 		} catch (HTTPException e) {
-			resetClient(key);
+			resetClient();
 			return;
 		}
 		// Get code from server (200 or 400).
@@ -239,26 +139,92 @@ public class ClientJarRet {
 			}
 			break;
 		}
-		resetClient(key);
+		resetClient();
 	}
 
-	private void setBufferError(SelectionKey key, String errorMessage)
-			throws IOException {
+	private void initializeTaskAndCompute() throws IOException, MalformedURLException {
+		// No task yet
+		requestNewTask();
+		HTTPReader reader = new HTTPReader(sc, bb);
+		HTTPHeader header;
+		try {
+			header = reader.readHeader();
+		} catch (IllegalStateException e) {
+			// Header is not fully received
+			return;
+		} catch (HTTPException e) {
+			resetClient();
+			return;
+		}
+		try {
+			task = newTask(header, reader);
+		} catch (IllegalStateException e) {
+			// Content is not fully received
+			return;
+		} catch (NoTaskException e) {
+			// No task to work on
+			long time;
+			while (e.getUntil() > (time = System.currentTimeMillis())) {
+				try {
+					Thread.sleep(e.getUntil() - time);
+				} catch (InterruptedException e1) {
+					e1.printStackTrace();
+				}
+			}
+			return;
+		}
+		Worker worker;
+		try {
+			worker = task.getWorker();
+		} catch (ClassNotFoundException | IllegalAccessException
+				| InstantiationException e) {
+			e.printStackTrace(System.err);
+			resetClient();
+			return;
+		}
+		int taskNumber = Integer.parseInt(task.getJobId());
+		String result = null;
+		try {
+			result = worker.compute(taskNumber);
+			System.out.println("------- ClientJarRet result -------");
+			System.out.println(result);
+			System.out.println("-----------------------------------");
+		} catch (Exception e) {
+			setBufferError("Computation error");
+			return;
+		}
+		if (null == result) {
+			setBufferError("Computation error");
+			return;
+		} else {
+			try {
+				checkResponse(result);
+			} catch (JsonMappingException e) {
+				setBufferError("Answer is nested");
+				return;
+			} catch (JsonGenerationException e) {
+				setBufferError("Answer is not valid JSON");
+				return;
+			}
+
+		}
+		setBufferAnswer(result);
+		return;
+	}
+
+	private void setBufferError(String errorMessage) throws IOException {
 		ByteBuffer resultBb = getContentError(errorMessage);
-		addSendHeader((SocketChannel) key.channel(), resultBb.limit());
-		key.interestOps(SelectionKey.OP_WRITE);
+		addSendHeader(sc, resultBb.limit());
 	}
 
-	private void setBufferAnswer(SelectionKey key, String answer)
-			throws IOException {
+	private void setBufferAnswer(String answer) throws IOException {
 		try {
 			ByteBuffer resultBb = getContent(answer);
-			addSendHeader((SocketChannel) key.channel(), resultBb.limit());
+			addSendHeader(sc, resultBb.limit());
 		} catch (BufferOverflowException e) {
 			bb.clear();
-			setBufferError(key, "Too Long");
+			setBufferError("Too Long");
 		}
-		key.interestOps(SelectionKey.OP_WRITE);
 	}
 
 	private ByteBuffer getContent(String result) throws JsonProcessingException {
@@ -285,19 +251,12 @@ public class ClientJarRet {
 		fields.put("Content-Type",
 				"application/json; charset=" + CHARSET_UTF8.name());
 		fields.put("Content-Length", size + "");
-		HTTPHeader header = HTTPHeader.create("POST Answer HTTP/1.1", fields);
+		HTTPHeader header = HTTPHeader.createRequestHeader("POST Answer HTTP/1.1", fields);
 		bb.put(header.toBytes());
 	}
 
-	private void resetClient(SelectionKey key) {
+	private void resetClient() {
 		task = null;
-		key.interestOps(SelectionKey.OP_WRITE);
-	}
-
-	private HTTPHeader readHeader(SocketChannel channel) throws IOException,
-			IllegalStateException {
-		channel.read(bb);
-		return HTTPHeader.fromByteBuffer(bb);
 	}
 
 	/**
@@ -307,34 +266,9 @@ public class ClientJarRet {
 	 *            - Selected key containing an opened channel.
 	 * @throws IOException
 	 */
-	private void close(SelectionKey key) throws IOException {
-		System.out.println("Connexion "
-				+ ((SocketChannel) key.channel()).getRemoteAddress()
-				+ " closed");
-		key.channel().close();
-	}
-
-	/**
-	 * Write into key's channel.
-	 * 
-	 * @param key
-	 *            - Selected key containing a channel.
-	 * @throws IOException
-	 */
-	private void doWrite(SelectionKey key) throws IOException {
-		SocketChannel channel = (SocketChannel) key.channel();
-		// No task computing
-		if (!hasTask()) {
-			requestNewTask(channel);
-			return;
-		}
-		// Task done
-		bb.flip();
-		channel.write(bb);
-		bb.compact();
-		if (!bb.hasRemaining()) {
-			key.interestOps(SelectionKey.OP_READ);
-		}
+	private void close() throws IOException {
+		System.out.println("Connexion " + sc.getRemoteAddress() + " closed");
+		sc.close();
 	}
 
 	/**
@@ -342,24 +276,25 @@ public class ClientJarRet {
 	 * 
 	 * @return
 	 */
-	private boolean hasTask() {
+	private boolean isIdle() {
 		return task == null;
 	}
 
 	/**
 	 * Send a request to get a new task.
 	 * 
-	 * @param channel
+	 * @param sc
 	 *            - Server channel.
 	 * @throws IOException
 	 */
-	private void requestNewTask(SocketChannel channel) throws IOException {
+	private void requestNewTask() throws IOException {
 		Map<String, String> fields = new HashMap<>();
-		fields.put("Host", channel.getRemoteAddress().toString());
-		HTTPHeader header = HTTPHeader.create("Get Task HTTP/1.1", fields);
+		fields.put("Host", sc.getRemoteAddress().toString());
+		HTTPHeader header = HTTPHeader.createRequestHeader("GET Task HTTP/1.1", fields);
 		bb.put(header.toBytes());
 		bb.flip();
-		channel.write(bb);
+		sc.write(bb);
+		bb.compact();
 	}
 
 	/**
@@ -373,19 +308,28 @@ public class ClientJarRet {
 	 * @throws IOException
 	 * @throws NoTaskException
 	 */
-	private Task newTask(HTTPHeader header, SocketChannel channel)
+	private Task newTask(HTTPHeader header, HTTPReader reader)
 			throws IOException, NoTaskException, IllegalStateException {
-		channel.read(bb);
-		if (bb.limit() < header.getContentLength()) {
-			throw new IllegalStateException("Response not fully received");
-		}
-
-		String response = header.getCharset().decode(bb).toString();
-
+		System.out.println("------- ClientJarRet newTask START -------");
+		ByteBuffer bbIn = reader.readBytes(header.getContentLength());
+		bbIn.flip();
+		String response = header.getCharset().decode(bbIn).toString();
+		System.out.println(response);
 		ObjectMapper mapper = new ObjectMapper();
+		
+		
+		// http://stackoverflow.com/questions/23469784/com-fasterxml-jackson-databind-exc-unrecognizedpropertyexception-unrecognized-f
+		mapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
+		mapper.setVisibilityChecker(VisibilityChecker.Std
+		.defaultInstance().withFieldVisibility(
+		JsonAutoDetect.Visibility.ANY));
+		
+		
+
 		Task task;
 		try {
 			task = mapper.readValue(response, Task.class);
+			System.out.println(task.toString());
 		} catch (JsonMappingException e) {
 			JsonFactory factory = new JsonFactory();
 			JsonParser parser = factory.createParser(response);
@@ -394,7 +338,7 @@ public class ClientJarRet {
 			}
 			throw new NoTaskException(parser.getIntValue());
 		}
-
+		System.out.println("-------- ClientJarRet newTask END --------");
 		return task;
 	}
 

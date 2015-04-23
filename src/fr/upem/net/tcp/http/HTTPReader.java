@@ -1,7 +1,6 @@
 package fr.upem.net.tcp.http;
 
 import java.io.IOException;
-import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 import java.nio.charset.Charset;
@@ -72,11 +71,13 @@ public class HTTPReader {
 	 *             could be read if the header is ill-formed
 	 */
 	public HTTPHeader readHeader() throws IOException {
+		System.out.println("------- HTTPHeader readHeader START -------");
 		String statusLine = readLineCRLF();
+		System.out.println(statusLine);
 		HashMap<String, String> map = new HashMap<>();
-
 		while (true) {
 			String line = readLineCRLF();
+			System.out.println(line);
 			if (line.length() == 0) {
 				break;
 			}
@@ -89,6 +90,7 @@ public class HTTPReader {
 				map.put(statusLine, s);
 			}
 		}
+		System.out.println("-------- HTTPHeader readHeader END --------");
 		return HTTPHeader.create(statusLine, map);
 	}
 
@@ -127,46 +129,4 @@ public class HTTPReader {
 		return bb;
 	}
 
-	public static void main(String[] args) throws IOException {
-		Charset charsetASCII = Charset.forName("ASCII");
-		String request = "GET / HTTP/1.1\r\n" + "Host: www.w3.org\r\n" + "\r\n";
-		SocketChannel sc = SocketChannel.open();
-		sc.connect(new InetSocketAddress("www.w3.org", 80));
-		sc.write(charsetASCII.encode(request));
-		ByteBuffer bb = ByteBuffer.allocate(50);
-		HTTPReader reader = new HTTPReader(sc, bb);
-		System.out.println(reader.readLineCRLF());
-		System.out.println(reader.readLineCRLF());
-		System.out.println(reader.readLineCRLF());
-		sc.close();
-
-		/*
-		 * bb = ByteBuffer.allocate(50); sc = SocketChannel.open();
-		 * sc.connect(new InetSocketAddress("www.w3.org", 80)); reader = new
-		 * HTTPReader(sc, bb); sc.write(charsetASCII.encode(request));
-		 * System.out.println(reader.readHeader()); sc.close();
-		 */
-
-		bb = ByteBuffer.allocate(50);
-		sc = SocketChannel.open();
-		sc.connect(new InetSocketAddress("www.w3.org", 80));
-		reader = new HTTPReader(sc, bb);
-		sc.write(charsetASCII.encode(request));
-		HTTPHeader header = reader.readHeader();
-		System.out.println(header);
-		ByteBuffer content = reader.readBytes(header.getContentLength());
-		content.flip();
-		System.out.println(header.getCharset().decode(content));
-		sc.close();
-
-		/*
-		 * bb = ByteBuffer.allocate(50); request = "GET / HTTP/1.1\r\n" +
-		 * "Host: www.u-pem.fr\r\n" + "\r\n"; sc = SocketChannel.open();
-		 * sc.connect(new InetSocketAddress("www.u-pem.fr", 80)); reader = new
-		 * HTTPReader(sc, bb); sc.write(charsetASCII.encode(request)); header =
-		 * reader.readHeader(); System.out.println(header); content =
-		 * reader.readChunks(); content.flip();
-		 * System.out.println(header.getCharset().decode(content)); sc.close();
-		 */
-	}
 }

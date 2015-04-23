@@ -63,6 +63,21 @@ public class HTTPHeader {
 			fieldsCopied.put(s, fields.get(s).trim());
 		return new HTTPHeader(response, version, code, fieldsCopied);
 	}
+	
+	public static HTTPHeader createRequestHeader(String response, Map<String, String> fields)
+			throws HTTPException {
+		String[] tokens = response.split(" ");
+		// Treatment of the response line
+		ensure(tokens.length >= 2, "Badly formed response:\n" + response);
+		String version = tokens[2];
+		ensure(HTTPHeader.SUPPORTED_VERSIONS.contains(version),
+				"Unsupported version in response:\n" + response);
+		int code = 0;
+		Map<String, String> fieldsCopied = new HashMap<>();
+		for (String s : fields.keySet())
+			fieldsCopied.put(s, fields.get(s).trim());
+		return new HTTPHeader(response, version, code, fieldsCopied);
+	}
 
 	public static HTTPHeader fromByteBuffer(ByteBuffer bb)
 			throws HTTPException, IllegalStateException {
@@ -76,7 +91,7 @@ public class HTTPHeader {
 		boolean readingKey = true;
 		StringBuilder key = new StringBuilder();
 		StringBuilder value = new StringBuilder();
-		for (int i = 0; i < limit; i++) {
+		for (int i = 0; i < limit-1; i++) {
 			final char actualChar = bb.getChar(i);
 			if (carret && actualChar == '\n') {
 				// If empty line
@@ -129,7 +144,7 @@ public class HTTPHeader {
 
 		bb.position(realLimit);
 		bb.compact();
-
+		System.out.println(fields);
 		return create(response, fields);
 	}
 
@@ -211,8 +226,12 @@ public class HTTPHeader {
 	}
 
 	public String toString() {
+		if(code != 0) {
 		return response + "\r\n" + version + " " + code + "\r\n"
 				+ fields.toString();
+		} else {
+			return response + "\r\n" + "Host: "+ fields.get("Host") +"\r\n\r\n";
+		}
 	}
 
 	public byte[] toBytes() {
