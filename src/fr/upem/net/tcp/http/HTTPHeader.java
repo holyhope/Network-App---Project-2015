@@ -63,9 +63,9 @@ public class HTTPHeader {
 			fieldsCopied.put(s, fields.get(s).trim());
 		return new HTTPHeader(response, version, code, fieldsCopied);
 	}
-	
-	public static HTTPHeader createRequestHeader(String response, Map<String, String> fields)
-			throws HTTPException {
+
+	public static HTTPHeader createRequestHeader(String response,
+			Map<String, String> fields) throws HTTPException {
 		String[] tokens = response.split(" ");
 		// Treatment of the response line
 		ensure(tokens.length >= 2, "Badly formed response:\n" + response);
@@ -74,8 +74,9 @@ public class HTTPHeader {
 				"Unsupported version in response:\n" + response);
 		int code = 0;
 		Map<String, String> fieldsCopied = new HashMap<>();
-		for (String s : fields.keySet())
+		for (String s : fields.keySet()) {
 			fieldsCopied.put(s, fields.get(s).trim());
+		}
 		return new HTTPHeader(response, version, code, fieldsCopied);
 	}
 
@@ -91,7 +92,7 @@ public class HTTPHeader {
 		boolean readingKey = true;
 		StringBuilder key = new StringBuilder();
 		StringBuilder value = new StringBuilder();
-		for (int i = 0; i < limit-1; i++) {
+		for (int i = 0; i < limit - 1; i++) {
 			final char actualChar = bb.getChar(i);
 			if (carret && actualChar == '\n') {
 				// If empty line
@@ -226,12 +227,17 @@ public class HTTPHeader {
 	}
 
 	public String toString() {
-		if(code != 0) {
-		return response + "\r\n" + version + " " + code + "\r\n"
-				+ fields.toString();
-		} else {
-			return response + "\r\n" + "Host: "+ fields.get("Host") +"\r\n\r\n";
+		StringBuilder stringBuilder = new StringBuilder();
+		stringBuilder.append(response).append("\r\n");
+		if (code != 0) {
+			stringBuilder.append(version).append(" ").append(code)
+					.append("\r\n");
 		}
+		fields.forEach((k, v) -> {
+			stringBuilder.append(k).append(": ").append(v).append("\r\n");
+		});
+		stringBuilder.append("\r\n");
+		return stringBuilder.toString();
 	}
 
 	public byte[] toBytes() {

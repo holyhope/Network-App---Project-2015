@@ -88,17 +88,22 @@ public class ClientJarRet {
 	 */
 	public void launch() throws IOException {
 		while (!Thread.interrupted()) {
-			if(isIdle()) {
+			if (isIdle()) {
 				initializeTaskAndCompute();
 			}
-			bb.flip();
-			sc.write(bb);
-			bb.compact();
+			sendAnswer();
 			getAnswerAndReset();
 		}
 		close();
 	}
-	
+
+	private void sendAnswer() throws IOException {
+		bb.flip();
+		System.out.println(CHARSET_UTF8.decode(bb));
+		sc.write(bb);
+		bb.compact();
+	}
+
 	private void getAnswerAndReset() throws IOException {
 		// Answer sent
 		HTTPReader reader = new HTTPReader(sc, bb);
@@ -142,7 +147,8 @@ public class ClientJarRet {
 		resetClient();
 	}
 
-	private void initializeTaskAndCompute() throws IOException, MalformedURLException {
+	private void initializeTaskAndCompute() throws IOException,
+			MalformedURLException {
 		// No task yet
 		requestNewTask();
 		HTTPReader reader = new HTTPReader(sc, bb);
@@ -185,6 +191,7 @@ public class ClientJarRet {
 		int taskNumber = Integer.parseInt(task.getJobId());
 		String result = null;
 		try {
+			System.out.println("------- Task computing -------");
 			result = worker.compute(taskNumber);
 			System.out.println("------- ClientJarRet result -------");
 			System.out.println(result);
@@ -213,6 +220,7 @@ public class ClientJarRet {
 	}
 
 	private void setBufferError(String errorMessage) throws IOException {
+		System.err.println("error occured: " + errorMessage);
 		ByteBuffer resultBb = getContentError(errorMessage);
 		addSendHeader(sc, resultBb.limit());
 	}
@@ -221,6 +229,7 @@ public class ClientJarRet {
 		try {
 			ByteBuffer resultBb = getContent(answer);
 			addSendHeader(sc, resultBb.limit());
+			bb.put(resultBb);
 		} catch (BufferOverflowException e) {
 			bb.clear();
 			setBufferError("Too Long");
@@ -251,7 +260,8 @@ public class ClientJarRet {
 		fields.put("Content-Type",
 				"application/json; charset=" + CHARSET_UTF8.name());
 		fields.put("Content-Length", size + "");
-		HTTPHeader header = HTTPHeader.createRequestHeader("POST Answer HTTP/1.1", fields);
+		HTTPHeader header = HTTPHeader.createRequestHeader(
+				"POST Answer HTTP/1.1", fields);
 		bb.put(header.toBytes());
 	}
 
@@ -290,7 +300,8 @@ public class ClientJarRet {
 	private void requestNewTask() throws IOException {
 		Map<String, String> fields = new HashMap<>();
 		fields.put("Host", sc.getRemoteAddress().toString());
-		HTTPHeader header = HTTPHeader.createRequestHeader("GET Task HTTP/1.1", fields);
+		HTTPHeader header = HTTPHeader.createRequestHeader("GET Task HTTP/1.1",
+				fields);
 		bb.put(header.toBytes());
 		bb.flip();
 		sc.write(bb);
@@ -316,15 +327,11 @@ public class ClientJarRet {
 		String response = header.getCharset().decode(bbIn).toString();
 		System.out.println(response);
 		ObjectMapper mapper = new ObjectMapper();
-		
-		
+
 		// http://stackoverflow.com/questions/23469784/com-fasterxml-jackson-databind-exc-unrecognizedpropertyexception-unrecognized-f
 		mapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
-		mapper.setVisibilityChecker(VisibilityChecker.Std
-		.defaultInstance().withFieldVisibility(
-		JsonAutoDetect.Visibility.ANY));
-		
-		
+		mapper.setVisibilityChecker(VisibilityChecker.Std.defaultInstance()
+				.withFieldVisibility(JsonAutoDetect.Visibility.ANY));
 
 		Task task;
 		try {
