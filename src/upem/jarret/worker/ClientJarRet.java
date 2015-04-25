@@ -3,22 +3,20 @@ package upem.jarret.worker;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.net.InetSocketAddress;
-import java.net.MalformedURLException;
 import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
+import java.nio.channels.ClosedByInterruptException;
 import java.nio.channels.SocketChannel;
 import java.nio.charset.Charset;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Scanner;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import upem.jarret.task.NoTaskException;
 import upem.jarret.task.Task;
 
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonGenerationException;
-import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.JsonToken;
@@ -32,20 +30,27 @@ import fr.upem.net.tcp.http.HTTPHeader;
 import fr.upem.net.tcp.http.HTTPReader;
 
 public class ClientJarRet {
-	private final SocketChannel sc;
-	private final InetSocketAddress serverAddress;
 	private static final int BUFFER_SIZE = 4096;
-	private static final Charset CHARSET_UTF8 = Charset.forName("utf-8");
+	private static final Charset CHARSET_UTF8 = Charset.forName("UTF-8");
 
-	public static void main(String[] args) throws IOException {
+	public static void main(String[] args) {
 		if (3 != args.length) {
 			usage();
 			return;
 		}
-		ClientJarRet client = new ClientJarRet(args[0], args[1],
-				Integer.parseInt(args[2]));
-
-		client.launch();
+		ClientJarRet client;
+		try {
+			client = new ClientJarRet(args[0], args[1],
+					Integer.parseInt(args[2]));
+		} catch (NumberFormatException e) {
+			usage();
+			return;
+		} catch (IOException e) {
+			System.err.println(e);
+			return;
+		}
+		client.start();
+		// TODO scan System.in for shutdown in order to terminate client.
 	}
 
 	/**
@@ -65,43 +70,77 @@ public class ClientJarRet {
 		out.println("Usage: ClientJarRet <clientID> <serverAddress> <serverPort>\n");
 	}
 
-	private final ByteBuffer bb = ByteBuffer.allocate(BUFFER_SIZE);
+	private final Thread thread;
 	private final String clientID;
+	private final SocketChannel sc;
+	private final InetSocketAddress serverAddress;
+	private final ByteBuffer bb = ByteBuffer.allocate(BUFFER_SIZE);
+	private final AtomicBoolean running = new AtomicBoolean(false);
+
 	private Task task;
 
 	public ClientJarRet(String clientID, String address, int port)
 			throws IOException {
 
-		sc = SocketChannel.open();
 		serverAddress = new InetSocketAddress(address, port);
-		sc.connect(serverAddress);
 		this.clientID = clientID;
+		sc = SocketChannel.open();
+		thread = new Thread(() -> {
+			try {
+				sc.connect(serverAddress);
+				while (!Thread.interrupted()) {
+					try {
+						initializeTaskAndCompute();
+						sendAnswer();
+						getAnswerAndReset();
+					} catch (ClosedByInterruptException e) {
+						break;
+					} catch (Exception e) {
+						System.err.println(e);
+					} finally {
+						endTask();
+					}
+				}
+			} catch (IOException e) {
+				System.err.println(e);
+			} finally {
+				running.set(false);
+				System.out.println("Client terminated.");
+			}
+		});
 	}
 
 	/**
 	 * Start the client.
-	 * 
-	 * @throws IOException
-	 * @throws InstantiationException
-	 * @throws IllegalAccessException
-	 * @throws ClassNotFoundException
 	 */
-	public void launch() throws IOException {
-		while (!Thread.interrupted()) {
-			if (isIdle()) {
-				initializeTaskAndCompute();
-			}
-			sendAnswer();
-			getAnswerAndReset();
+	public void start() {
+		if (running.getAndSet(true)) {
+			throw new IllegalStateException("Client already running.");
 		}
-		close();
+		thread.start();
+	}
+
+	/**
+	 * Stop the client.
+	 */
+	public void shutdown() {
+		System.out.println("Shutting down...");
+		thread.interrupt();
+	}
+
+	/**
+	 * Check if client is running.
+	 * 
+	 * @return True if client is running.
+	 */
+	public boolean isrunning() {
+		return running.get();
 	}
 
 	private void sendAnswer() throws IOException {
 		bb.flip();
-		System.out.println(CHARSET_UTF8.decode(bb));
 		sc.write(bb);
-		bb.compact();
+		bb.clear();
 	}
 
 	private void getAnswerAndReset() throws IOException {
@@ -110,58 +149,24 @@ public class ClientJarRet {
 		HTTPHeader header;
 		try {
 			header = reader.readHeader();
-		} catch (IllegalStateException e) {
-			// Header is not fully received
-			return;
 		} catch (HTTPException e) {
-			resetClient();
+			System.err.println(e);
 			return;
 		}
-		// Get code from server (200 or 400).
 		int code = header.getCode();
 		switch (code) {
 		case 200:
 			break;
 		default:
-			System.err.println("Error (code " + code + ")");
-			try (Scanner scanner = new Scanner(System.in)) {
-				while (scanner.hasNextLine()) {
-					// Let user choose if he wants to retry.
-					System.out.println("Try again ? (" + YesNo.YES + "/"
-							+ YesNo.NO + ")");
-					try {
-						YesNo yesNo = YesNo.fromString(scanner.nextLine());
-						if (yesNo.equals(YesNo.YES)) {
-							// Stop before resetClient
-							return;
-						} else if (yesNo.equals(YesNo.NO)) {
-							break;
-						}
-					} catch (IllegalArgumentException e) {
-						// Nothing to do, user did not write Yes or No
-					}
-				}
-			}
-			break;
+			System.err.println("Error from server: " + code);
 		}
-		resetClient();
 	}
 
-	private void initializeTaskAndCompute() throws IOException,
-			MalformedURLException {
+	private void initializeTaskAndCompute() throws IOException {
 		// No task yet
 		requestNewTask();
 		HTTPReader reader = new HTTPReader(sc, bb);
-		HTTPHeader header;
-		try {
-			header = reader.readHeader();
-		} catch (IllegalStateException e) {
-			// Header is not fully received
-			return;
-		} catch (HTTPException e) {
-			resetClient();
-			return;
-		}
+		HTTPHeader header = reader.readHeader();
 		try {
 			task = newTask(header, reader);
 		} catch (IllegalStateException e) {
@@ -184,18 +189,14 @@ public class ClientJarRet {
 			worker = task.getWorker();
 		} catch (ClassNotFoundException | IllegalAccessException
 				| InstantiationException e) {
-			e.printStackTrace(System.err);
-			resetClient();
-			return;
+			// setBufferError(e.getMessage());
+			// This error should not be reported to the server.
+			throw new IOException("Invalid jar file.");
 		}
 		int taskNumber = Integer.parseInt(task.getJobId());
 		String result = null;
 		try {
-			System.out.println("------- Task computing -------");
 			result = worker.compute(taskNumber);
-			System.out.println("------- ClientJarRet result -------");
-			System.out.println(result);
-			System.out.println("-----------------------------------");
 		} catch (Exception e) {
 			setBufferError("Computation error");
 			return;
@@ -209,7 +210,7 @@ public class ClientJarRet {
 			} catch (JsonMappingException e) {
 				setBufferError("Answer is nested");
 				return;
-			} catch (JsonGenerationException e) {
+			} catch (IOException e) {
 				setBufferError("Answer is not valid JSON");
 				return;
 			}
@@ -220,15 +221,17 @@ public class ClientJarRet {
 	}
 
 	private void setBufferError(String errorMessage) throws IOException {
-		System.err.println("error occured: " + errorMessage);
-		ByteBuffer resultBb = getContentError(errorMessage);
-		addSendHeader(sc, resultBb.limit());
+		ByteBuffer resultBb = constructResponse("Error", errorMessage);
+		addSendHeader(sc, resultBb.position());
+		resultBb.flip();
+		bb.put(resultBb);
 	}
 
 	private void setBufferAnswer(String answer) throws IOException {
 		try {
-			ByteBuffer resultBb = getContent(answer);
-			addSendHeader(sc, resultBb.limit());
+			ByteBuffer resultBb = constructResponse("Answer", answer);
+			addSendHeader(sc, resultBb.position());
+			resultBb.flip();
 			bb.put(resultBb);
 		} catch (BufferOverflowException e) {
 			bb.clear();
@@ -236,21 +239,20 @@ public class ClientJarRet {
 		}
 	}
 
-	private ByteBuffer getContent(String result) throws JsonProcessingException {
-		Map<String, String> map = task.buildMap();
-		map.put("ClientId", clientID);
-		map.put("Error", result);
-		ObjectMapper mapper = new ObjectMapper();
-		return CHARSET_UTF8.encode(mapper.writeValueAsString(map));
-	}
-
-	private ByteBuffer getContentError(String error)
+	private ByteBuffer constructResponse(String key, String msg)
 			throws JsonProcessingException {
 		Map<String, String> map = task.buildMap();
 		map.put("ClientId", clientID);
-		map.put("Error", error);
+		map.put(key, msg);
+		return getEncodedResponse(map);
+	}
+
+	private ByteBuffer getEncodedResponse(Map<String, String> map)
+			throws JsonProcessingException {
 		ObjectMapper mapper = new ObjectMapper();
-		return CHARSET_UTF8.encode(mapper.writeValueAsString(map));
+		ByteBuffer bb = CHARSET_UTF8.encode(mapper.writeValueAsString(map));
+		bb.compact();
+		return bb;
 	}
 
 	private void addSendHeader(SocketChannel channel, int size)
@@ -265,29 +267,8 @@ public class ClientJarRet {
 		bb.put(header.toBytes());
 	}
 
-	private void resetClient() {
+	private void endTask() {
 		task = null;
-	}
-
-	/**
-	 * Close channel of the key.
-	 * 
-	 * @param key
-	 *            - Selected key containing an opened channel.
-	 * @throws IOException
-	 */
-	private void close() throws IOException {
-		System.out.println("Connexion " + sc.getRemoteAddress() + " closed");
-		sc.close();
-	}
-
-	/**
-	 * Check if there is a task.
-	 * 
-	 * @return
-	 */
-	private boolean isIdle() {
-		return task == null;
 	}
 
 	/**
@@ -349,27 +330,15 @@ public class ClientJarRet {
 		return task;
 	}
 
-	private void checkResponse(final String json)
-			throws JsonGenerationException, JsonMappingException {
-		boolean valid = false;
-		boolean isNested = false;
-		try {
-			JsonFactory factory = new JsonFactory();
-			JsonParser parser = factory.createParser(json);
-			JsonToken jsonToken;
-			while ((jsonToken = parser.nextToken()) != null) {
-				if (jsonToken.isStructStart() && isNested) {
-					throw new JsonMappingException("Answer is nested");
-				}
+	private void checkResponse(final String json) throws JsonMappingException,
+			IOException {
+		JsonFactory factory = new JsonFactory();
+		JsonParser parser = factory.createParser(json);
+		JsonToken jsonToken;
+		while ((jsonToken = parser.nextToken()) != null) {
+			if (jsonToken.isStructStart()) {
+				throw new JsonMappingException("Answer is nested");
 			}
-			valid = true;
-		} catch (JsonParseException jpe) {
-			jpe.printStackTrace();
-		} catch (IOException ioe) {
-			ioe.printStackTrace();
-		}
-		if (!valid) {
-			throw new JsonGenerationException("Answer is not valid JSON");
 		}
 
 	}
