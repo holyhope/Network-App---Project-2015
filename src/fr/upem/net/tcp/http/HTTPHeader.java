@@ -145,7 +145,6 @@ public class HTTPHeader {
 
 		bb.position(realLimit);
 		bb.compact();
-		System.out.println(fields);
 		return create(response, fields);
 	}
 

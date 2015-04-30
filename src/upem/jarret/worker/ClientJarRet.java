@@ -17,9 +17,10 @@ import upem.jarret.task.Task;
 
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.JsonToken;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -46,7 +47,7 @@ public class ClientJarRet {
 			usage();
 			return;
 		} catch (IOException e) {
-			System.err.println(e);
+			e.printStackTrace(System.err);
 			return;
 		}
 		client.start();
@@ -85,29 +86,38 @@ public class ClientJarRet {
 		serverAddress = new InetSocketAddress(address, port);
 		this.clientID = clientID;
 		sc = SocketChannel.open();
-		thread = new Thread(() -> {
+
+		Runnable runnable = () -> {
 			try {
 				sc.connect(serverAddress);
 				while (!Thread.interrupted()) {
 					try {
 						initializeTaskAndCompute();
+						bb.flip();
+						System.out.println("------ Response ------");
+						System.out.println(CHARSET_UTF8.decode(bb));
 						sendAnswer();
 						getAnswerAndReset();
 					} catch (ClosedByInterruptException e) {
+						// Close client with thread.interrupt();
+						break;
+					} catch (IOException e) {
+						e.printStackTrace(System.err);
 						break;
 					} catch (Exception e) {
-						System.err.println(e);
+						e.printStackTrace(System.err);
 					} finally {
 						endTask();
 					}
 				}
 			} catch (IOException e) {
-				System.err.println(e);
+				e.printStackTrace(System.err);
 			} finally {
 				running.set(false);
 				System.out.println("Client terminated.");
 			}
-		});
+		};
+		thread = new Thread(runnable);
 	}
 
 	/**
@@ -150,7 +160,7 @@ public class ClientJarRet {
 		try {
 			header = reader.readHeader();
 		} catch (HTTPException e) {
-			System.err.println(e);
+			e.printStackTrace(System.err);
 			return;
 		}
 		int code = header.getCode();
@@ -165,10 +175,8 @@ public class ClientJarRet {
 	private void initializeTaskAndCompute() throws IOException {
 		// No task yet
 		requestNewTask();
-		HTTPReader reader = new HTTPReader(sc, bb);
-		HTTPHeader header = reader.readHeader();
 		try {
-			task = newTask(header, reader);
+			getRequestedTask();
 		} catch (IllegalStateException e) {
 			// Content is not fully received
 			return;
@@ -182,7 +190,6 @@ public class ClientJarRet {
 					e1.printStackTrace();
 				}
 			}
-			return;
 		}
 		Worker worker;
 		try {
@@ -204,20 +211,29 @@ public class ClientJarRet {
 		if (null == result) {
 			setBufferError("Computation error");
 			return;
-		} else {
-			try {
-				checkResponse(result);
-			} catch (JsonMappingException e) {
-				setBufferError("Answer is nested");
-				return;
-			} catch (IOException e) {
-				setBufferError("Answer is not valid JSON");
-				return;
-			}
-
 		}
-		setBufferAnswer(result);
+		Map<String, String> map = new HashMap<String, String>();
+		ObjectMapper mapper = new ObjectMapper();
+		try {
+			map = mapper.readValue(result,
+					new TypeReference<HashMap<String, Object>>() {
+					});
+		} catch (JsonParseException e) {
+			setBufferError("Answer is not valid JSON");
+			return;
+		} catch (JsonMappingException e) {
+			setBufferError("Answer is nested");
+			return;
+		}
+		setBufferAnswer(map);
 		return;
+	}
+
+	private void getRequestedTask() throws NoTaskException,
+			IllegalStateException, IOException {
+		HTTPReader reader = new HTTPReader(sc, bb);
+		HTTPHeader header = reader.readHeader();
+		task = newTask(header, reader);
 	}
 
 	private void setBufferError(String errorMessage) throws IOException {
@@ -227,7 +243,7 @@ public class ClientJarRet {
 		bb.put(resultBb);
 	}
 
-	private void setBufferAnswer(String answer) throws IOException {
+	private void setBufferAnswer(Object answer) throws IOException {
 		try {
 			ByteBuffer resultBb = constructResponse("Answer", answer);
 			addSendHeader(sc, resultBb.position());
@@ -239,15 +255,15 @@ public class ClientJarRet {
 		}
 	}
 
-	private ByteBuffer constructResponse(String key, String msg)
+	private ByteBuffer constructResponse(String key, Object msg)
 			throws JsonProcessingException {
-		Map<String, String> map = task.buildMap();
+		Map<String, Object> map = task.buildMap();
 		map.put("ClientId", clientID);
 		map.put(key, msg);
 		return getEncodedResponse(map);
 	}
 
-	private ByteBuffer getEncodedResponse(Map<String, String> map)
+	private ByteBuffer getEncodedResponse(Map<String, Object> map)
 			throws JsonProcessingException {
 		ObjectMapper mapper = new ObjectMapper();
 		ByteBuffer bb = CHARSET_UTF8.encode(mapper.writeValueAsString(map));
@@ -302,11 +318,9 @@ public class ClientJarRet {
 	 */
 	private Task newTask(HTTPHeader header, HTTPReader reader)
 			throws IOException, NoTaskException, IllegalStateException {
-		System.out.println("------- ClientJarRet newTask START -------");
 		ByteBuffer bbIn = reader.readBytes(header.getContentLength());
 		bbIn.flip();
 		String response = header.getCharset().decode(bbIn).toString();
-		System.out.println(response);
 		ObjectMapper mapper = new ObjectMapper();
 
 		// http://stackoverflow.com/questions/23469784/com-fasterxml-jackson-databind-exc-unrecognizedpropertyexception-unrecognized-f
@@ -317,7 +331,8 @@ public class ClientJarRet {
 		Task task;
 		try {
 			task = mapper.readValue(response, Task.class);
-			System.out.println(task.toString());
+			System.out.println("New task: " + task.getTask());
+			System.out.println("JobId:    " + task.getJobId());
 		} catch (JsonMappingException e) {
 			JsonFactory factory = new JsonFactory();
 			JsonParser parser = factory.createParser(response);
@@ -326,20 +341,6 @@ public class ClientJarRet {
 			}
 			throw new NoTaskException(parser.getIntValue());
 		}
-		System.out.println("-------- ClientJarRet newTask END --------");
 		return task;
-	}
-
-	private void checkResponse(final String json) throws JsonMappingException,
-			IOException {
-		JsonFactory factory = new JsonFactory();
-		JsonParser parser = factory.createParser(json);
-		JsonToken jsonToken;
-		while ((jsonToken = parser.nextToken()) != null) {
-			if (jsonToken.isStructStart()) {
-				throw new JsonMappingException("Answer is nested");
-			}
-		}
-
 	}
 }

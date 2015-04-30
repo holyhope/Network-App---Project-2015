@@ -42,8 +42,8 @@ public class Task {
 		return WorkerFactory.getWorker(WorkerURL, WorkerClassName);
 	}
 	
-	public Map<String,String> buildMap() {
-		HashMap<String, String> map = new HashMap<>();
+	public Map<String, Object> buildMap() {
+		HashMap<String, Object> map = new HashMap<>();
 		map.put("JobId", JobId);
 		map.put("WorkerVersion", WorkerVersion);
 		map.put("WorkerURL", WorkerURL);

@@ -71,13 +71,10 @@ public class HTTPReader {
 	 *             could be read if the header is ill-formed
 	 */
 	public HTTPHeader readHeader() throws IOException {
-		System.out.println("------- HTTPHeader readHeader START -------");
 		String statusLine = readLineCRLF();
-		System.out.println(statusLine);
 		HashMap<String, String> map = new HashMap<>();
 		while (true) {
 			String line = readLineCRLF();
-			System.out.println(line);
 			if (line.length() == 0) {
 				break;
 			}
@@ -90,7 +87,6 @@ public class HTTPReader {
 				map.put(statusLine, s);
 			}
 		}
-		System.out.println("-------- HTTPHeader readHeader END --------");
 		return HTTPHeader.create(statusLine, map);
 	}
 
