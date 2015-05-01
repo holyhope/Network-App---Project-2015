@@ -89,6 +89,26 @@ public class HTTPReader {
 		}
 		return HTTPHeader.create(statusLine, map);
 	}
+	
+	public HTTPHeader readClientHeader() throws IOException {
+		String statusLine = readLineCRLF();
+		HashMap<String, String> map = new HashMap<>();
+		while (true) {
+			String line = readLineCRLF();
+			if (line.length() == 0) {
+				break;
+			}
+			int index_of_separator = line.indexOf(":");
+			String s;
+			if (null != (s = map.putIfAbsent(
+					line.substring(0, index_of_separator),
+					line.substring(index_of_separator + 2)))) {
+				s.concat("; " + line);
+				map.put(statusLine, s);
+			}
+		}
+		return HTTPHeader.createRequestHeader(statusLine, map);
+	}
 
 	/**
 	 * @param size

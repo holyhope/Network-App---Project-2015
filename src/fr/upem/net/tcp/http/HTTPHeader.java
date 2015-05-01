@@ -79,7 +79,7 @@ public class HTTPHeader {
 		}
 		return new HTTPHeader(response, version, code, fieldsCopied);
 	}
-
+	
 	public static HTTPHeader fromByteBuffer(ByteBuffer bb)
 			throws HTTPException, IllegalStateException {
 		String response = null;
@@ -225,13 +225,14 @@ public class HTTPHeader {
 				&& fields.get("Transfer-Encoding").trim().equals("chunked");
 	}
 
+	// TODO check if the test is needed
 	public String toString() {
 		StringBuilder stringBuilder = new StringBuilder();
 		stringBuilder.append(response).append("\r\n");
-		if (code != 0) {
+		/*if (code != 0) {
 			stringBuilder.append(version).append(" ").append(code)
 					.append("\r\n");
-		}
+		}*/
 		fields.forEach((k, v) -> {
 			stringBuilder.append(k).append(": ").append(v).append("\r\n");
 		});

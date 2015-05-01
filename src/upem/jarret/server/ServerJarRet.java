@@ -1,15 +1,26 @@
 package upem.jarret.server;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.net.InetSocketAddress;
+import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.nio.charset.Charset;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import fr.upem.net.tcp.http.HTTPHeader;
+import fr.upem.net.tcp.http.HTTPReader;
 
 public class ServerJarRet {
 	private static final long TIMEOUT = 1000;
@@ -17,13 +28,13 @@ public class ServerJarRet {
 	private static final Charset CHARSET_UTF8 = Charset.forName("utf-8");
 
 	public static void main(String[] args) throws IOException {
-		if (3 != args.length) {
+		if (1 != args.length) {
 			usage();
 			return;
 		}
-		ServerJarRet client = new ServerJarRet(Integer.parseInt(args[2]));
+		ServerJarRet server = new ServerJarRet(Integer.parseInt(args[0]));
 
-		client.launch();
+		server.launch();
 	}
 
 	/**
@@ -40,19 +51,18 @@ public class ServerJarRet {
 	 *            - Where to display usage infos.
 	 */
 	public static void usage(PrintStream out) {
-		out.println("Usage: ClientJarRet <clientID> <serverAddress> <serverPort>\n");
+		out.println("Usage: ServerJarRet <port>\n");
 	}
 
-	private final ServerSocketChannel ssc;
+	private final ServerSocketChannel serverSocketChannel;
 	private final Selector selector;
-	private final ByteBuffer bb = ByteBuffer.allocate(BUFFER_SIZE);
 
 	public ServerJarRet(int port) throws IOException {
 		selector = Selector.open();
-		ssc = ServerSocketChannel.open();
-		ssc.bind(new InetSocketAddress(port));
-		ssc.configureBlocking(false);
-		ssc.register(selector, SelectionKey.OP_ACCEPT);
+		serverSocketChannel = ServerSocketChannel.open();
+		serverSocketChannel.bind(new InetSocketAddress(port));
+		serverSocketChannel.configureBlocking(false);
+		serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
 	}
 
 	/**
@@ -107,11 +117,12 @@ public class ServerJarRet {
 
 	private void doAccept(SelectionKey key) throws IOException {
 		// only the ServerSocketChannel is register in OP_ACCEPT
-		SocketChannel sc = ssc.accept();
+		SocketChannel sc = serverSocketChannel.accept();
 		if (sc == null)
 			return; // In case, the selector gave a bad hint
 		sc.configureBlocking(false);
-		sc.register(selector, SelectionKey.OP_READ);
+		ByteBuffer bb = ByteBuffer.allocate(BUFFER_SIZE);
+		sc.register(selector, SelectionKey.OP_READ, bb);
 	}
 
 	/**
@@ -123,8 +134,70 @@ public class ServerJarRet {
 	 */
 	private void doRead(SelectionKey key) throws IOException {
 		// TODO Receive a request for a new task or a response
+		// Client requests a new task
+		ByteBuffer bb = (ByteBuffer) key.attachment();
+		SocketChannel sc = (SocketChannel) key.channel();
+		sc.read(bb);
+		// Server will exit when reading client's task answer
+		HTTPReader reader = new HTTPReader(sc, bb);
+		HTTPHeader header = reader.readClientHeader();
+		String[] tokens = header.getResponse().split(" ");
+		if(tokens[0].equals("GET") && tokens[1].equals("Task")) {
+			// TODO FIX JSON mismatch between server and client : JobTaskNumber&Task and WorkerVersionNumber&WorkerVersion
+			try {
+				ObjectMapper mapper = new ObjectMapper();
+		 
+				// read JSON from a file
+				Map<String, String> map = mapper.readValue(
+					new File("workerdescription.json"),
+					new TypeReference<Map<String, String>>() {
+				});
+				setBufferAnswer(sc, bb, map);
+				bb.flip();
+				key.interestOps(SelectionKey.OP_WRITE);
+				return;
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+			
+		} else if(tokens[0].equals("POST") && tokens[1].equals("Answer")) {
+			// TODO build bb with code 200 or 400
+		}
+	}
+	
+	private void addSendHeader(SocketChannel sc, ByteBuffer bb, int size)
+			throws IOException {
+		Map<String, String> fields = new HashMap<>();
+		fields.put("Content-Type",
+				"application/json; charset=" + CHARSET_UTF8.name());
+		fields.put("Content-Length", size + "");
+		HTTPHeader header = HTTPHeader.create("HTTP/1.1 200 OK", fields);
+		bb.put(header.toBytes());
+	}
+	
+	private void setBufferAnswer(SocketChannel sc, ByteBuffer bb, Map<String, String> fields) throws IOException {
+		try {
+			ByteBuffer resultBb = getEncodedResponse(fields);
+			addSendHeader(sc, bb, resultBb.position());
+			resultBb.flip();
+			bb.put(resultBb);
+		} catch (BufferOverflowException e) {
+			bb.clear();
+			//setBufferError("Too Long");
+		}
 	}
 
+	private ByteBuffer getEncodedResponse(Map<String, String> map)
+			throws JsonProcessingException {
+		ObjectMapper mapper = new ObjectMapper();
+		ByteBuffer bb = CHARSET_UTF8.encode(mapper.writeValueAsString(map));
+		bb.compact();
+		return bb;
+	}
+	
+	
+	
+	
 	/**
 	 * Close channel of the key.
 	 * 
@@ -148,6 +221,9 @@ public class ServerJarRet {
 	 * @throws IOException
 	 */
 	private void doWrite(SelectionKey key) throws IOException {
-		// TODO send a new job or send an acknowledgment.
+		ByteBuffer bb = (ByteBuffer) key.attachment();
+		SocketChannel sc = (SocketChannel) key.channel();
+		sc.write(bb);
+		key.interestOps(SelectionKey.OP_READ);
 	}
 }

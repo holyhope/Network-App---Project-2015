@@ -271,6 +271,7 @@ public class ClientJarRet {
 		return bb;
 	}
 
+	// TODO replace channel with sc
 	private void addSendHeader(SocketChannel channel, int size)
 			throws IOException {
 		Map<String, String> fields = new HashMap<>();
