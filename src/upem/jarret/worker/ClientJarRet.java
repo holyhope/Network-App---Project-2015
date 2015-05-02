@@ -238,7 +238,7 @@ public class ClientJarRet {
 
 	private void setBufferError(String errorMessage) throws IOException {
 		ByteBuffer resultBb = constructResponse("Error", errorMessage);
-		addSendHeader(sc, resultBb.position());
+		addSendHeader(resultBb.position());
 		resultBb.flip();
 		bb.put(resultBb);
 	}
@@ -246,7 +246,7 @@ public class ClientJarRet {
 	private void setBufferAnswer(Object answer) throws IOException {
 		try {
 			ByteBuffer resultBb = constructResponse("Answer", answer);
-			addSendHeader(sc, resultBb.position());
+			addSendHeader(resultBb.position());
 			resultBb.flip();
 			bb.put(resultBb);
 		} catch (BufferOverflowException e) {
@@ -271,11 +271,10 @@ public class ClientJarRet {
 		return bb;
 	}
 
-	// TODO replace channel with sc
-	private void addSendHeader(SocketChannel channel, int size)
+	private void addSendHeader(int size)
 			throws IOException {
 		Map<String, String> fields = new HashMap<>();
-		fields.put("Host", channel.getRemoteAddress().toString());
+		fields.put("Host", sc.getRemoteAddress().toString());
 		fields.put("Content-Type",
 				"application/json; charset=" + CHARSET_UTF8.name());
 		fields.put("Content-Length", size + "");

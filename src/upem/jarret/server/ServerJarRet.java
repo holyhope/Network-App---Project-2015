@@ -27,6 +27,8 @@ public class ServerJarRet {
 	private static final int BUFFER_SIZE = 4096;
 	private static final Charset CHARSET_UTF8 = Charset.forName("utf-8");
 
+	
+	// TODO Handle worker priority and more than one task in workerdescription.json 
 	public static void main(String[] args) throws IOException {
 		if (1 != args.length) {
 			usage();
@@ -137,13 +139,18 @@ public class ServerJarRet {
 		// Client requests a new task
 		ByteBuffer bb = (ByteBuffer) key.attachment();
 		SocketChannel sc = (SocketChannel) key.channel();
-		sc.read(bb);
+		bb.clear();
 		// Server will exit when reading client's task answer
 		HTTPReader reader = new HTTPReader(sc, bb);
 		HTTPHeader header = reader.readClientHeader();
+		System.out.println("-------- HEADER RECEIVED FROM CLIENT --------");
+		System.out.println(header.toString());
 		String[] tokens = header.getResponse().split(" ");
 		if(tokens[0].equals("GET") && tokens[1].equals("Task")) {
 			// TODO FIX JSON mismatch between server and client : JobTaskNumber&Task and WorkerVersionNumber&WorkerVersion
+			// TODO remove JobDescription & JobPriority from map 
+			// Create a map from workerdescription.json
+			
 			try {
 				ObjectMapper mapper = new ObjectMapper();
 		 
@@ -152,7 +159,7 @@ public class ServerJarRet {
 					new File("workerdescription.json"),
 					new TypeReference<Map<String, String>>() {
 				});
-				setBufferAnswer(sc, bb, map);
+				setBufferAnswer(bb, map);
 				bb.flip();
 				key.interestOps(SelectionKey.OP_WRITE);
 				return;
@@ -161,11 +168,32 @@ public class ServerJarRet {
 			}
 			
 		} else if(tokens[0].equals("POST") && tokens[1].equals("Answer")) {
-			// TODO build bb with code 200 or 400
+			// TODO Check is client answer is correct
+			bb.flip();
+			String json = CHARSET_UTF8.decode(bb).toString();
+			Map<String,Object> map = new HashMap<String,Object>();
+			ObjectMapper mapper = new ObjectMapper();
+		 
+			try {
+		 
+				//convert JSON string to Map
+				map = mapper.readValue(json, 
+				    new TypeReference<HashMap<String,Object>>(){});
+				
+				System.out.println("-------- MAP CONVERTED FROM JSON --------");
+				System.out.println(map);
+				bb.clear();
+				// TODO Build correct header 
+				addAnswerHeader(bb);
+				bb.flip();
+				key.interestOps(SelectionKey.OP_WRITE);
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
 		}
 	}
 	
-	private void addSendHeader(SocketChannel sc, ByteBuffer bb, int size)
+	private void addSendHeader(ByteBuffer bb, int size)
 			throws IOException {
 		Map<String, String> fields = new HashMap<>();
 		fields.put("Content-Type",
@@ -175,10 +203,16 @@ public class ServerJarRet {
 		bb.put(header.toBytes());
 	}
 	
-	private void setBufferAnswer(SocketChannel sc, ByteBuffer bb, Map<String, String> fields) throws IOException {
+	private void addAnswerHeader(ByteBuffer bb)
+			throws IOException {
+		String answer = "HTTP/1.1 200 OK";
+		bb.put(Charset.defaultCharset().encode(answer));
+	}
+	
+	private void setBufferAnswer(ByteBuffer bb, Map<String, String> fields) throws IOException {
 		try {
 			ByteBuffer resultBb = getEncodedResponse(fields);
-			addSendHeader(sc, bb, resultBb.position());
+			addSendHeader(bb, resultBb.position());
 			resultBb.flip();
 			bb.put(resultBb);
 		} catch (BufferOverflowException e) {
