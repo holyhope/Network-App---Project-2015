@@ -25,17 +25,16 @@ import fr.upem.net.tcp.http.HTTPReader;
 public class ServerJarRet {
 	private static final long TIMEOUT = 1000;
 	private static final int BUFFER_SIZE = 4096;
-	private static final Charset CHARSET_UTF8 = Charset.forName("utf-8");
+	private static final Charset CHARSET_UTF8 = Charset.forName("UTF-8");
 
-	
-	// TODO Handle worker priority and more than one task in workerdescription.json 
+	// TODO Handle worker priority and more than one task in
+	// workerdescription.json
 	public static void main(String[] args) throws IOException {
 		if (1 != args.length) {
 			usage();
 			return;
 		}
 		ServerJarRet server = new ServerJarRet(Integer.parseInt(args[0]));
-
 		server.launch();
 	}
 
@@ -111,10 +110,16 @@ public class ServerJarRet {
 				try {
 					doRead(key);
 				} catch (IOException e) {
-					e.printStackTrace();
+					close(key);
 				}
 			}
 		}
+	}
+
+	private static class Attachment {
+		final ByteBuffer bb = ByteBuffer.allocate(BUFFER_SIZE);
+		TaskServer task = new TaskServer();
+
 	}
 
 	private void doAccept(SelectionKey key) throws IOException {
@@ -123,8 +128,7 @@ public class ServerJarRet {
 		if (sc == null)
 			return; // In case, the selector gave a bad hint
 		sc.configureBlocking(false);
-		ByteBuffer bb = ByteBuffer.allocate(BUFFER_SIZE);
-		sc.register(selector, SelectionKey.OP_READ, bb);
+		sc.register(selector, SelectionKey.OP_READ, new Attachment());
 	}
 
 	/**
@@ -135,66 +139,63 @@ public class ServerJarRet {
 	 * @throws IOException
 	 */
 	private void doRead(SelectionKey key) throws IOException {
-		// TODO Receive a request for a new task or a response
 		// Client requests a new task
-		ByteBuffer bb = (ByteBuffer) key.attachment();
+		Attachment attachment = (Attachment) key.attachment();
 		SocketChannel sc = (SocketChannel) key.channel();
-		bb.clear();
 		// Server will exit when reading client's task answer
-		HTTPReader reader = new HTTPReader(sc, bb);
+		HTTPReader reader = new HTTPReader(sc, attachment.bb);
+		// TODO readClientHeader block server
 		HTTPHeader header = reader.readClientHeader();
 		System.out.println("-------- HEADER RECEIVED FROM CLIENT --------");
 		System.out.println(header.toString());
 		String[] tokens = header.getResponse().split(" ");
-		if(tokens[0].equals("GET") && tokens[1].equals("Task")) {
-			// TODO FIX JSON mismatch between server and client : JobTaskNumber&Task and WorkerVersionNumber&WorkerVersion
-			// TODO remove JobDescription & JobPriority from map 
+
+		if (tokens[0].equals("GET") && tokens[1].equals("TaskWorker")) {
+			// TODO FIX JSON mismatch between server and client :
+			// JobTaskNumber&TaskWorker and WorkerVersionNumber&WorkerVersion
+			// TODO remove JobDescription & JobPriority from map
 			// Create a map from workerdescription.json
-			
+
 			try {
 				ObjectMapper mapper = new ObjectMapper();
-		 
+
 				// read JSON from a file
-				Map<String, String> map = mapper.readValue(
-					new File("workerdescription.json"),
-					new TypeReference<Map<String, String>>() {
-				});
-				setBufferAnswer(bb, map);
-				bb.flip();
+				Map<String, String> map = mapper.readValue(new File(
+						"workerdescription.json"),
+						new TypeReference<Map<String, String>>() {
+						});
+				setBufferAnswer(attachment.bb, map);
 				key.interestOps(SelectionKey.OP_WRITE);
 				return;
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
-			
-		} else if(tokens[0].equals("POST") && tokens[1].equals("Answer")) {
-			// TODO Check is client answer is correct
-			bb.flip();
-			String json = CHARSET_UTF8.decode(bb).toString();
-			Map<String,Object> map = new HashMap<String,Object>();
+
+		} else if (tokens[0].equals("POST") && tokens[1].equals("Answer")) {
+			// TODO Check if client answer is correct
+			attachment.bb.flip();
+			String json = CHARSET_UTF8.decode(attachment.bb).toString();
+			Map<String, Object> map = new HashMap<String, Object>();
 			ObjectMapper mapper = new ObjectMapper();
-		 
 			try {
-		 
-				//convert JSON string to Map
-				map = mapper.readValue(json, 
-				    new TypeReference<HashMap<String,Object>>(){});
-				
+				// convert JSON string to Map
+				map = mapper.readValue(json,
+						new TypeReference<HashMap<String, Object>>() {
+						});
+
 				System.out.println("-------- MAP CONVERTED FROM JSON --------");
 				System.out.println(map);
-				bb.clear();
-				// TODO Build correct header 
-				addAnswerHeader(bb);
-				bb.flip();
+				attachment.bb.clear();
+				// TODO Build correct header
+				addAnswerHeader(attachment.bb);
 				key.interestOps(SelectionKey.OP_WRITE);
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
 		}
 	}
-	
-	private void addSendHeader(ByteBuffer bb, int size)
-			throws IOException {
+
+	private void addSendHeader(ByteBuffer bb, int size) throws IOException {
 		Map<String, String> fields = new HashMap<>();
 		fields.put("Content-Type",
 				"application/json; charset=" + CHARSET_UTF8.name());
@@ -202,14 +203,14 @@ public class ServerJarRet {
 		HTTPHeader header = HTTPHeader.create("HTTP/1.1 200 OK", fields);
 		bb.put(header.toBytes());
 	}
-	
-	private void addAnswerHeader(ByteBuffer bb)
-			throws IOException {
-		String answer = "HTTP/1.1 200 OK";
+
+	private void addAnswerHeader(ByteBuffer bb) throws IOException {
+		String answer = "HTTP/1.1 200 OK\r\n\r\n";
 		bb.put(Charset.defaultCharset().encode(answer));
 	}
-	
-	private void setBufferAnswer(ByteBuffer bb, Map<String, String> fields) throws IOException {
+
+	private void setBufferAnswer(ByteBuffer bb, Map<String, String> fields)
+			throws IOException {
 		try {
 			ByteBuffer resultBb = getEncodedResponse(fields);
 			addSendHeader(bb, resultBb.position());
@@ -217,7 +218,7 @@ public class ServerJarRet {
 			bb.put(resultBb);
 		} catch (BufferOverflowException e) {
 			bb.clear();
-			//setBufferError("Too Long");
+			// setBufferError("Too Long");
 		}
 	}
 
@@ -228,10 +229,7 @@ public class ServerJarRet {
 		bb.compact();
 		return bb;
 	}
-	
-	
-	
-	
+
 	/**
 	 * Close channel of the key.
 	 * 
@@ -255,9 +253,11 @@ public class ServerJarRet {
 	 * @throws IOException
 	 */
 	private void doWrite(SelectionKey key) throws IOException {
-		ByteBuffer bb = (ByteBuffer) key.attachment();
+		Attachment attachment = (Attachment) key.attachment();
 		SocketChannel sc = (SocketChannel) key.channel();
-		sc.write(bb);
+		attachment.bb.flip();
+		sc.write(attachment.bb);
+		attachment.bb.compact();
 		key.interestOps(SelectionKey.OP_READ);
 	}
 }

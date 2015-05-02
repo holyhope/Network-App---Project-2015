@@ -12,9 +12,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import upem.jarret.task.NoTaskException;
-import upem.jarret.task.Task;
-
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParseException;
@@ -78,7 +75,7 @@ public class ClientJarRet {
 	private final ByteBuffer bb = ByteBuffer.allocate(BUFFER_SIZE);
 	private final AtomicBoolean running = new AtomicBoolean(false);
 
-	private Task task;
+	private TaskWorker taskWorker;
 
 	public ClientJarRet(String clientID, String address, int port)
 			throws IOException {
@@ -173,7 +170,7 @@ public class ClientJarRet {
 	}
 
 	private void initializeTaskAndCompute() throws IOException {
-		// No task yet
+		// No taskWorker yet
 		requestNewTask();
 		try {
 			getRequestedTask();
@@ -181,7 +178,7 @@ public class ClientJarRet {
 			// Content is not fully received
 			return;
 		} catch (NoTaskException e) {
-			// No task to work on
+			// No taskWorker to work on
 			long time;
 			while (e.getUntil() > (time = System.currentTimeMillis())) {
 				try {
@@ -193,14 +190,14 @@ public class ClientJarRet {
 		}
 		Worker worker;
 		try {
-			worker = task.getWorker();
+			worker = taskWorker.getWorker();
 		} catch (ClassNotFoundException | IllegalAccessException
 				| InstantiationException e) {
 			// setBufferError(e.getMessage());
 			// This error should not be reported to the server.
 			throw new IOException("Invalid jar file.");
 		}
-		int taskNumber = Integer.parseInt(task.getJobId());
+		int taskNumber = Integer.parseInt(taskWorker.getJobId());
 		String result = null;
 		try {
 			result = worker.compute(taskNumber);
@@ -233,7 +230,7 @@ public class ClientJarRet {
 			IllegalStateException, IOException {
 		HTTPReader reader = new HTTPReader(sc, bb);
 		HTTPHeader header = reader.readHeader();
-		task = newTask(header, reader);
+		taskWorker = newTaskWorker(header, reader);
 	}
 
 	private void setBufferError(String errorMessage) throws IOException {
@@ -257,7 +254,7 @@ public class ClientJarRet {
 
 	private ByteBuffer constructResponse(String key, Object msg)
 			throws JsonProcessingException {
-		Map<String, Object> map = task.buildMap();
+		Map<String, Object> map = taskWorker.buildMap();
 		map.put("ClientId", clientID);
 		map.put(key, msg);
 		return getEncodedResponse(map);
@@ -284,11 +281,11 @@ public class ClientJarRet {
 	}
 
 	private void endTask() {
-		task = null;
+		taskWorker = null;
 	}
 
 	/**
-	 * Send a request to get a new task.
+	 * Send a request to get a new taskWorker.
 	 * 
 	 * @param sc
 	 *            - Server channel.
@@ -297,7 +294,7 @@ public class ClientJarRet {
 	private void requestNewTask() throws IOException {
 		Map<String, String> fields = new HashMap<>();
 		fields.put("Host", sc.getRemoteAddress().toString());
-		HTTPHeader header = HTTPHeader.createRequestHeader("GET Task HTTP/1.1",
+		HTTPHeader header = HTTPHeader.createRequestHeader("GET TaskWorker HTTP/1.1",
 				fields);
 		bb.put(header.toBytes());
 		bb.flip();
@@ -306,17 +303,17 @@ public class ClientJarRet {
 	}
 
 	/**
-	 * Get a task from server.
+	 * Get a taskWorker from server.
 	 * 
 	 * @param header
 	 * 
 	 * @param channel
 	 * 
-	 * @return new Task
+	 * @return new TaskWorker
 	 * @throws IOException
 	 * @throws NoTaskException
 	 */
-	private Task newTask(HTTPHeader header, HTTPReader reader)
+	private TaskWorker newTaskWorker(HTTPHeader header, HTTPReader reader)
 			throws IOException, NoTaskException, IllegalStateException {
 		ByteBuffer bbIn = reader.readBytes(header.getContentLength());
 		bbIn.flip();
@@ -328,11 +325,11 @@ public class ClientJarRet {
 		mapper.setVisibilityChecker(VisibilityChecker.Std.defaultInstance()
 				.withFieldVisibility(JsonAutoDetect.Visibility.ANY));
 
-		Task task;
+		TaskWorker taskWorker;
 		try {
-			task = mapper.readValue(response, Task.class);
-			System.out.println("New task: " + task.getTask());
-			System.out.println("JobId:    " + task.getJobId());
+			taskWorker = mapper.readValue(response, TaskWorker.class);
+			System.out.println("New taskWorker: " + taskWorker.getTask());
+			System.out.println("JobId:    " + taskWorker.getJobId());
 		} catch (JsonMappingException e) {
 			JsonFactory factory = new JsonFactory();
 			JsonParser parser = factory.createParser(response);
@@ -341,6 +338,6 @@ public class ClientJarRet {
 			}
 			throw new NoTaskException(parser.getIntValue());
 		}
-		return task;
+		return taskWorker;
 	}
 }

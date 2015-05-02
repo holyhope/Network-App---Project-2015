@@ -1,4 +1,4 @@
-package upem.jarret.task;
+package upem.jarret.worker;
 
 import java.net.MalformedURLException;
 import java.util.HashMap;
@@ -7,7 +7,7 @@ import java.util.Map;
 import upem.jarret.worker.Worker;
 import upem.jarret.worker.WorkerFactory;
 
-public class Task {
+public class TaskWorker {
 	private String JobId;
 	private String WorkerVersion;
 	private String WorkerURL;
@@ -48,14 +48,14 @@ public class Task {
 		map.put("WorkerVersion", WorkerVersion);
 		map.put("WorkerURL", WorkerURL);
 		map.put("WorkerClassName", WorkerClassName);
-		map.put("Task", Task);
+		map.put("TaskWorker", Task);
 		return map;
 	}
 
 	@Override
 	public String toString() {
 		StringBuilder builder = new StringBuilder();
-		builder.append("Task [jobId=");
+		builder.append("TaskWorker [jobId=");
 		builder.append(JobId);
 		builder.append(", workerVersion=");
 		builder.append(WorkerVersion);
