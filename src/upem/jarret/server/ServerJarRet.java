@@ -1,6 +1,9 @@
 package upem.jarret.server;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStreamWriter;
 import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.net.InetSocketAddress;
@@ -12,6 +15,7 @@ import java.nio.channels.SocketChannel;
 import java.nio.charset.Charset;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Scanner;
 import java.util.Set;
 
 import upem.jarret.task.NoTaskException;
@@ -31,19 +35,45 @@ import fr.upem.net.tcp.http.HTTPStateException;
 public class ServerJarRet {
 	private static final long TIMEOUT = 1000;
 	private static final int BUFFER_SIZE = 4096;
-	private static final Charset CHARSET = Charset.forName("UTF-8");
+	private static final Charset CHARSET_UTF8 = Charset.forName("UTF-8");
 	private static final int COMBEBACK = 300;
+	private static Thread serverThread;
 
 	// TODO Handle worker priority and more than one task in
 	// workerdescription.json
-	public static void main(String[] args) throws IOException {
+	public static void main(String[] args) throws NumberFormatException,
+			IOException, InterruptedException {
 		if (1 != args.length) {
 			usage();
 			return;
 		}
 		ServerJarRet server = ServerJarRet.construct(Integer.parseInt(args[0]),
 				"workerdescription.json");
-		server.launch();
+		serverThread = new Thread(() -> {
+			server.launch();
+		});
+		serverThread.start();
+
+		try (Scanner scan = new Scanner(System.in)) {
+			while (scan.hasNextLine()) {
+				String line = scan.nextLine();
+				if (line.toLowerCase().equals("shutdown")) {
+					System.out.println("Server is shuting down !");
+					server.shutdown();
+					return;
+
+				}
+				if (line.toLowerCase().equals("shutdownnow")) {
+					System.out.println("Server is shuting down Now !");
+					server.shutdownNow();
+					return;
+				}
+
+				if (line.toLowerCase().equals("info")) {
+					server.info();
+				}
+			}
+		}
 	}
 
 	/**
@@ -68,6 +98,7 @@ public class ServerJarRet {
 	private final ServerSocketChannel serverSocketChannel;
 	private final String pathResults;
 
+	private boolean isShutdown = false;
 	private TasksManager taskManager;
 
 	private ServerJarRet(int port) throws IOException {
@@ -103,6 +134,9 @@ public class ServerJarRet {
 		Set<SelectionKey> selectedKeys = selector.selectedKeys();
 		logger.logInfos("Server started");
 		while (!Thread.interrupted()) {
+			if (isShutdown) {
+				break;
+			}
 			try {
 				selector.select(TIMEOUT);
 			} catch (IOException e) {
@@ -239,7 +273,7 @@ public class ServerJarRet {
 	private void computeAnswer(SelectionKey key) {
 		Attachment attachment = (Attachment) key.attachment();
 		attachment.bb.flip();
-		String json = CHARSET.decode(attachment.bb).toString();
+		String json = CHARSET_UTF8.decode(attachment.bb).toString();
 		Map<String, Object> map = new HashMap<String, Object>();
 		ObjectMapper mapper = new ObjectMapper();
 		try {
@@ -252,9 +286,11 @@ public class ServerJarRet {
 				addAnswerHeader(attachment.bb, "400 Bad Request");
 				return;
 			}
-			// TODO build corect path
-			String path = pathResults + "/" + attachment.task.getJobId() + "-"
-					+ attachment.task.getJobId();
+			// TODO build correct path
+			System.out.println(map);
+			// task = null quand on est ici du coup utilisation de la map
+			String path = pathResults + "/" + map.get("JobId") + "-"
+					+ map.get("JobTaskNumber");
 			try {
 				saveResult(path, key, map);
 				logger.logInfos("Result saved in " + path);
@@ -275,11 +311,21 @@ public class ServerJarRet {
 
 	private void saveResult(String path, SelectionKey key,
 			Map<String, Object> map) throws IOException {
-		PrintWriter writer = new PrintWriter(path, "UTF-8");
+		// Il faut créer le répertoire avant d'enregistrer
+		File file = new File(path);
+		file.getParentFile().mkdirs();
+
+		// http://stackoverflow.com/questions/1625234/how-to-append-text-to-an-existing-file-in-java
+		// bien expliqué
+		FileOutputStream fileOut = new FileOutputStream(file, true);
+		OutputStreamWriter outWriter = new OutputStreamWriter(fileOut, CHARSET_UTF8);
+		PrintWriter writer = new PrintWriter(outWriter);
+		
 		writer.println(map.get("ClientId") + "    "
 				+ ((SocketChannel) key.channel()).getRemoteAddress());
 		writer.println(map.get("Answer"));
 		writer.close();
+		
 	}
 
 	private void prepareNewTask(SelectionKey key) throws IOException {
@@ -299,7 +345,7 @@ public class ServerJarRet {
 	private void addSendHeader(ByteBuffer bb, int size) throws IOException {
 		Map<String, String> fields = new HashMap<>();
 		fields.put("Content-Type",
-				"application/json; charset=" + CHARSET.name());
+				"application/json; charset=" + CHARSET_UTF8.name());
 		fields.put("Content-Length", size + "");
 		HTTPHeader header = HTTPHeader.create("HTTP/1.1 200 OK", fields);
 		bb.put(header.toBytes());
@@ -322,7 +368,7 @@ public class ServerJarRet {
 	private ByteBuffer getEncodedResponse(Map<String, Object> map)
 			throws JsonProcessingException {
 		ObjectMapper mapper = new ObjectMapper();
-		ByteBuffer bb = CHARSET.encode(mapper.writeValueAsString(map));
+		ByteBuffer bb = CHARSET_UTF8.encode(mapper.writeValueAsString(map));
 		bb.compact();
 		return bb;
 	}
@@ -372,5 +418,23 @@ public class ServerJarRet {
 			// TODO does not seem to read after that
 		}
 		attachment.bb.compact();
+	}
+
+	private void shutdown() throws IOException, InterruptedException {
+		isShutdown = true;
+		while (serverThread.isAlive()) {
+		}
+		serverSocketChannel.close();
+	}
+
+	private void shutdownNow() throws IOException {
+		serverThread.interrupt();
+		serverSocketChannel.close();
+	}
+
+	private void info() {
+		System.out.println("There is " + (selector.keys().size() - 1)
+				+ " client(s) connected");
+		taskManager.info();
 	}
 }

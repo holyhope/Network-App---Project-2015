@@ -62,4 +62,11 @@ public class TasksManager {
 		tasks.sort(null);
 		return task;
 	}
+
+	public void info() {
+		tasks.stream().forEach(
+				t -> System.out.println("JobId: " + t.getJobId()
+						+ "\tJobTaskNumber: " + t.getJobTaskNumber()
+						+ "\tJobPriority: " + t.getJobPriority()));
+	}
 }
