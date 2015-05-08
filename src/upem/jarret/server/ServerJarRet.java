@@ -28,7 +28,7 @@ import fr.upem.net.tcp.http.HTTPReaderServer;
 import fr.upem.net.tcp.http.HTTPStateException;
 
 public class ServerJarRet {
-	private static final long TIMEOUT = 5000;
+	private static final long TIMEOUT = 1000;
 	private static final int BUFFER_SIZE = 4096;
 	private static final Charset CHARSET = Charset.forName("UTF-8");
 
@@ -93,6 +93,7 @@ public class ServerJarRet {
 	 */
 	public void launch() {
 		Set<SelectionKey> selectedKeys = selector.selectedKeys();
+		logger.logInfos("Server started");
 		while (!Thread.interrupted()) {
 			try {
 				selector.select(TIMEOUT);
@@ -256,6 +257,7 @@ public class ServerJarRet {
 			logger.logInfos(task);
 			setBufferAnswer(attachment.bb, task.buildMap());
 		} catch (NoTaskException e) {
+			logger.logWarning("No more tasks to compute");
 			// TODO send no task response
 		}
 	}
@@ -322,6 +324,7 @@ public class ServerJarRet {
 		}
 		if (!attachment.bb.hasRemaining()) {
 			logger.logInfos("Response sent");
+			key.attach(new Attachment());
 			key.interestOps(SelectionKey.OP_READ);
 			logger.logInfos("Now listenning...");
 			// TODO does not seem to read after that

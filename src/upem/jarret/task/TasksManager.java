@@ -13,7 +13,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.introspect.VisibilityChecker;
 
 public class TasksManager {
-	private TaskServer[] tasks = new TaskServer[1];
+	private final ArrayList<TaskServer> tasks = new ArrayList<>();
 
 	private TasksManager() {
 	}
@@ -23,7 +23,6 @@ public class TasksManager {
 		TasksManager manager = new TasksManager();
 
 		ObjectMapper mapper = new ObjectMapper();
-		ArrayList<TaskServer> tasks = new ArrayList<>();
 
 		// http://stackoverflow.com/questions/23469784/com-fasterxml-jackson-databind-exc-unrecognizedpropertyexception-unrecognized-f
 		mapper.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
@@ -36,49 +35,32 @@ public class TasksManager {
 				String string = scanner.nextLine();
 				stringBuilder.append(string);
 				if (string.equals("")) {
-					tasks.add(mapper.readValue(stringBuilder.toString(),
-							TaskServer.class));
+					manager.tasks.add(mapper.readValue(
+							stringBuilder.toString(), TaskServer.class));
 					stringBuilder = new StringBuilder();
 				}
 			}
 			if (stringBuilder.length() != 0) {
-				tasks.add(mapper.readValue(stringBuilder.toString(),
+				manager.tasks.add(mapper.readValue(stringBuilder.toString(),
 						TaskServer.class));
 				stringBuilder = new StringBuilder();
 			}
 		}
 
-		tasks.sort(null);
-		manager.tasks = tasks.toArray(manager.tasks);
+		manager.tasks.sort(null);
+		System.out.println("Tasks " + manager.tasks);
 
 		return manager;
 	}
 
 	public TaskServer nextTask() throws NoTaskException {
-		TaskServer task = tasks[0];
+		TaskServer task = tasks.get(0);
 		try {
 			task.decrementPriority();
 		} catch (IllegalAccessException e) {
 			throw new NoTaskException();
 		}
-		if (tasks.length == 1) {
-			return task;
-		}
-
-		int priority = task.getJobPriority();
-		int priorityNext = tasks[1].getJobPriority();
-		if (priority >= priorityNext) {
-			return task;
-		}
-
-		for (int i = 1; i < tasks.length; i++) {
-			TaskServer taskTmp = tasks[i];
-			if (taskTmp.getJobPriority() < priorityNext) {
-				tasks[i] = task;
-				tasks[0] = taskTmp;
-			}
-		}
-
+		tasks.sort(null);
 		return task;
 	}
 }

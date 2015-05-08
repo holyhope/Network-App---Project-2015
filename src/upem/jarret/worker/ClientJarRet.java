@@ -96,7 +96,6 @@ public class ClientJarRet {
 				while (!Thread.interrupted()) {
 					try {
 						initializeTaskAndCompute();
-						bb.flip();
 						sendAnswer();
 						getAnswerAndReset();
 					} catch (ClosedByInterruptException e) {
@@ -253,7 +252,7 @@ public class ClientJarRet {
 			addSendHeader(resultBb.position());
 			resultBb.flip();
 			bb.put(resultBb);
-			logger.logWarning("Generating result: " + answer);
+			logger.logInfos("Generating result: " + answer);
 		} catch (BufferOverflowException e) {
 			bb.clear();
 			setBufferError("Too Long");
