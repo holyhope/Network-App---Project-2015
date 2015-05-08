@@ -28,8 +28,7 @@ public class WorkerFactory {
 		URL urls[] = { new URL("jar", "", url + "!/") };
 		URLClassLoader urlClassLoader = new URLClassLoader(urls, Thread
 				.currentThread().getContextClassLoader());
-		Class theClass = Class.forName(className, true, urlClassLoader);
-		theClass.newInstance();
+		Class<?> theClass = Class.forName(className, true, urlClassLoader);
 		return (Worker) theClass.newInstance();
 
 	}

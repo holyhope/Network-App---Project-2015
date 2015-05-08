@@ -183,6 +183,7 @@ public class ClientJarRet {
 			return;
 		} catch (NoTaskException e) {
 			// No taskWorker to work on
+			logger.logInfos("Waiting...");
 			long time;
 			while (e.getUntil() > (time = System.currentTimeMillis())) {
 				try {
@@ -191,6 +192,8 @@ public class ClientJarRet {
 					e1.printStackTrace();
 				}
 			}
+			endTask();
+			return;
 		}
 		Worker worker;
 		try {
@@ -304,7 +307,7 @@ public class ClientJarRet {
 				"GET TaskWorker HTTP/1.1", fields);
 		bb.put(header.toBytes());
 		bb.flip();
-		logger.logInfos("Request new task");
+		logger.logInfos("Requesting new task...");
 		sc.write(bb);
 		bb.compact();
 	}
@@ -341,9 +344,16 @@ public class ClientJarRet {
 			JsonFactory factory = new JsonFactory();
 			JsonParser parser = factory.createParser(response);
 			if (parser.nextValue() == null) {
-				throw new IllegalStateException("Empty response.");
+				throw new IllegalStateException("Empty response");
 			}
 			throw new NoTaskException(parser.getIntValue());
+		}
+		if (!taskWorker.isValid()) {
+			HashMap<String, Integer> map = mapper.readValue(response,
+					new TypeReference<HashMap<String, Integer>>() {
+					});
+			int comeBackIn = map.get("ComeBackInSeconds");
+			throw new NoTaskException(comeBackIn * 1000);
 		}
 		return taskWorker;
 	}

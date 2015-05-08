@@ -31,6 +31,7 @@ public class ServerJarRet {
 	private static final long TIMEOUT = 1000;
 	private static final int BUFFER_SIZE = 4096;
 	private static final Charset CHARSET = Charset.forName("UTF-8");
+	private static final int COMBEBACK = 300;
 
 	// TODO Handle worker priority and more than one task in
 	// workerdescription.json
@@ -258,7 +259,9 @@ public class ServerJarRet {
 			setBufferAnswer(attachment.bb, task.buildMap());
 		} catch (NoTaskException e) {
 			logger.logWarning("No more tasks to compute");
-			// TODO send no task response
+			Map<String, Object> map = new HashMap<String, Object>();
+			map.put("ComeBackInSeconds", COMBEBACK);
+			setBufferAnswer(attachment.bb, map);
 		}
 	}
 
