@@ -12,6 +12,9 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import upem.jarret.task.NoTaskException;
+import upem.jarret.task.TaskWorker;
+
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParseException;
@@ -23,6 +26,7 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.introspect.VisibilityChecker;
 
+import fr.upem.logger.Logger;
 import fr.upem.net.tcp.http.HTTPException;
 import fr.upem.net.tcp.http.HTTPHeader;
 import fr.upem.net.tcp.http.HTTPReader;
@@ -68,6 +72,7 @@ public class ClientJarRet {
 		out.println("Usage: ClientJarRet <clientID> <serverAddress> <serverPort>\n");
 	}
 
+	private final Logger logger = new Logger();
 	private final Thread thread;
 	private final String clientID;
 	private final SocketChannel sc;
@@ -87,12 +92,11 @@ public class ClientJarRet {
 		Runnable runnable = () -> {
 			try {
 				sc.connect(serverAddress);
+				logger.logInfos("Connected to server");
 				while (!Thread.interrupted()) {
 					try {
 						initializeTaskAndCompute();
 						bb.flip();
-						System.out.println("------ Response ------");
-						System.out.println(CHARSET_UTF8.decode(bb));
 						sendAnswer();
 						getAnswerAndReset();
 					} catch (ClosedByInterruptException e) {
@@ -111,7 +115,7 @@ public class ClientJarRet {
 				e.printStackTrace(System.err);
 			} finally {
 				running.set(false);
-				System.out.println("Client terminated.");
+				logger.logWarning("Client terminated.");
 			}
 		};
 		thread = new Thread(runnable);
@@ -131,7 +135,7 @@ public class ClientJarRet {
 	 * Stop the client.
 	 */
 	public void shutdown() {
-		System.out.println("Shutting down...");
+		logger.logInfos("Shutting down...");
 		thread.interrupt();
 	}
 
@@ -147,6 +151,7 @@ public class ClientJarRet {
 	private void sendAnswer() throws IOException {
 		bb.flip();
 		sc.write(bb);
+		logger.logInfos("Result sent");
 		bb.clear();
 	}
 
@@ -157,7 +162,7 @@ public class ClientJarRet {
 		try {
 			header = reader.readHeader();
 		} catch (HTTPException e) {
-			e.printStackTrace(System.err);
+			logger.logWarning("Cannot read header");
 			return;
 		}
 		int code = header.getCode();
@@ -165,7 +170,7 @@ public class ClientJarRet {
 		case 200:
 			break;
 		default:
-			System.err.println("Error from server: " + code);
+			logger.logWarning("Error from server: " + code);
 		}
 	}
 
@@ -201,6 +206,7 @@ public class ClientJarRet {
 		String result = null;
 		try {
 			result = worker.compute(taskNumber);
+			// TODO Always throw exception.
 		} catch (Exception e) {
 			setBufferError("Computation error");
 			return;
@@ -238,6 +244,7 @@ public class ClientJarRet {
 		addSendHeader(resultBb.position());
 		resultBb.flip();
 		bb.put(resultBb);
+		logger.logWarning("Generating error: " + errorMessage);
 	}
 
 	private void setBufferAnswer(Object answer) throws IOException {
@@ -246,6 +253,7 @@ public class ClientJarRet {
 			addSendHeader(resultBb.position());
 			resultBb.flip();
 			bb.put(resultBb);
+			logger.logWarning("Generating result: " + answer);
 		} catch (BufferOverflowException e) {
 			bb.clear();
 			setBufferError("Too Long");
@@ -268,8 +276,7 @@ public class ClientJarRet {
 		return bb;
 	}
 
-	private void addSendHeader(int size)
-			throws IOException {
+	private void addSendHeader(int size) throws IOException {
 		Map<String, String> fields = new HashMap<>();
 		fields.put("Host", sc.getRemoteAddress().toString());
 		fields.put("Content-Type",
@@ -294,10 +301,11 @@ public class ClientJarRet {
 	private void requestNewTask() throws IOException {
 		Map<String, String> fields = new HashMap<>();
 		fields.put("Host", sc.getRemoteAddress().toString());
-		HTTPHeader header = HTTPHeader.createRequestHeader("GET TaskWorker HTTP/1.1",
-				fields);
+		HTTPHeader header = HTTPHeader.createRequestHeader(
+				"GET TaskWorker HTTP/1.1", fields);
 		bb.put(header.toBytes());
 		bb.flip();
+		logger.logInfos("Request new task");
 		sc.write(bb);
 		bb.compact();
 	}
@@ -328,8 +336,8 @@ public class ClientJarRet {
 		TaskWorker taskWorker;
 		try {
 			taskWorker = mapper.readValue(response, TaskWorker.class);
-			System.out.println("New taskWorker: " + taskWorker.getTask());
-			System.out.println("JobId:    " + taskWorker.getJobId());
+			logger.logInfos("Worker: " + taskWorker.getJobTaskNumber()
+					+ "    Job: " + taskWorker.getJobId());
 		} catch (JsonMappingException e) {
 			JsonFactory factory = new JsonFactory();
 			JsonParser parser = factory.createParser(response);

@@ -7,16 +7,22 @@ import java.nio.charset.Charset;
 import java.util.HashMap;
 
 public class HTTPReader {
+	public static final byte CR = 13;
+	public static final byte LF = 10;
 
-	private final Charset ASCII_CHARSET = Charset.forName("ASCII");
+	public final Charset charset;
+
 	private final SocketChannel sc;
 	private final ByteBuffer buff;
-	private static final byte CR = 13;
-	private static final byte LF = 10;
 
 	public HTTPReader(SocketChannel sc, ByteBuffer buff) {
+		this(sc, buff, Charset.forName("ASCII"));
+	}
+
+	public HTTPReader(SocketChannel sc, ByteBuffer buff, Charset charset) {
 		this.sc = sc;
 		this.buff = buff;
+		this.charset = charset;
 	}
 
 	/**
@@ -49,7 +55,7 @@ public class HTTPReader {
 			}
 			ByteBuffer tmp = buff.duplicate();
 			tmp.flip();
-			sb.append(ASCII_CHARSET.decode(tmp));
+			sb.append(charset.decode(tmp));
 			buff.compact();
 			if (finished) {
 				break;
@@ -88,26 +94,6 @@ public class HTTPReader {
 			}
 		}
 		return HTTPHeader.create(statusLine, map);
-	}
-	
-	public HTTPHeader readClientHeader() throws IOException {
-		String statusLine = readLineCRLF();
-		HashMap<String, String> map = new HashMap<>();
-		while (true) {
-			String line = readLineCRLF();
-			if (line.length() == 0) {
-				break;
-			}
-			int index_of_separator = line.indexOf(":");
-			String s;
-			if (null != (s = map.putIfAbsent(
-					line.substring(0, index_of_separator),
-					line.substring(index_of_separator + 2)))) {
-				s.concat("; " + line);
-				map.put(statusLine, s);
-			}
-		}
-		return HTTPHeader.createRequestHeader(statusLine, map);
 	}
 
 	/**
