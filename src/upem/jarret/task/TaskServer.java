@@ -41,4 +41,8 @@ public class TaskServer extends TaskWorker implements Comparable<TaskServer> {
 	public boolean isValid() {
 		return super.isValid() && JobPriority >= 0;
 	}
+
+	public void incrementPriority() {
+		JobPriority++;
+	}
 }

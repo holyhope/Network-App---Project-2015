@@ -2,6 +2,7 @@ package upem.jarret.server;
 
 import java.io.IOException;
 import java.io.PrintStream;
+import java.io.PrintWriter;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
@@ -65,15 +66,21 @@ public class ServerJarRet {
 	private final Logger logger = new Logger();
 	private final Selector selector;
 	private final ServerSocketChannel serverSocketChannel;
+	private final String pathResults;
 
 	private TasksManager taskManager;
 
 	private ServerJarRet(int port) throws IOException {
+		this(port, "results");
+	}
+
+	private ServerJarRet(int port, String pathResults) throws IOException {
 		selector = Selector.open();
 		serverSocketChannel = ServerSocketChannel.open();
 		serverSocketChannel.bind(new InetSocketAddress(port));
 		serverSocketChannel.configureBlocking(false);
 		serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
+		this.pathResults = pathResults;
 	}
 
 	public static ServerJarRet construct(int port, String confFile)
@@ -161,6 +168,7 @@ public class ServerJarRet {
 		final ByteBuffer bb = ByteBuffer.allocate(BUFFER_SIZE);
 		HTTPHeader header;
 		long lastActivity = System.currentTimeMillis();
+		TaskServer task;
 
 		void setActive() {
 			lastActivity = System.currentTimeMillis();
@@ -230,7 +238,6 @@ public class ServerJarRet {
 
 	private void computeAnswer(SelectionKey key) {
 		Attachment attachment = (Attachment) key.attachment();
-		// TODO Check if client answer is correct
 		attachment.bb.flip();
 		String json = CHARSET.decode(attachment.bb).toString();
 		Map<String, Object> map = new HashMap<String, Object>();
@@ -240,23 +247,47 @@ public class ServerJarRet {
 			map = mapper.readValue(json,
 					new TypeReference<HashMap<String, Object>>() {
 					});
-
-			System.out.println("-------- MAP CONVERTED FROM JSON --------");
-			System.out.println(map);
 			attachment.bb.clear();
-			// TODO Build correct header
-			addAnswerHeader(attachment.bb);
+			if (!validResult(map)) {
+				addAnswerHeader(attachment.bb, "400 Bad Request");
+				return;
+			}
+			// TODO build corect path
+			String path = pathResults + "/" + attachment.task.getJobId() + "-"
+					+ attachment.task.getJobId();
+			try {
+				saveResult(path, key, map);
+				logger.logInfos("Result saved in " + path);
+			} catch (IOException e) {
+				logger.logError("Cannot write result in " + path, e);
+			}
+			attachment.task = null;
+			addAnswerHeader(attachment.bb, "200 OK");
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
 	}
 
+	private boolean validResult(Map<String, Object> map) {
+		// TODO Check map content
+		return true;
+	}
+
+	private void saveResult(String path, SelectionKey key,
+			Map<String, Object> map) throws IOException {
+		PrintWriter writer = new PrintWriter(path, "UTF-8");
+		writer.println(map.get("ClientId") + "    "
+				+ ((SocketChannel) key.channel()).getRemoteAddress());
+		writer.println(map.get("Answer"));
+		writer.close();
+	}
+
 	private void prepareNewTask(SelectionKey key) throws IOException {
 		Attachment attachment = (Attachment) key.attachment();
 		try {
-			TaskServer task = taskManager.nextTask();
-			logger.logInfos(task);
-			setBufferAnswer(attachment.bb, task.buildMap());
+			attachment.task = taskManager.nextTask();
+			logger.logInfos(attachment.task);
+			setBufferAnswer(attachment.bb, attachment.task.buildMap());
 		} catch (NoTaskException e) {
 			logger.logWarning("No more tasks to compute");
 			Map<String, Object> map = new HashMap<String, Object>();
@@ -274,8 +305,9 @@ public class ServerJarRet {
 		bb.put(header.toBytes());
 	}
 
-	private void addAnswerHeader(ByteBuffer bb) throws IOException {
-		String answer = "HTTP/1.1 200 OK\r\n\r\n";
+	private void addAnswerHeader(ByteBuffer bb, String code) throws IOException {
+		// TODO Build correct header
+		String answer = "HTTP/1.1 " + code + "\r\n\r\n";
 		bb.put(Charset.defaultCharset().encode(answer));
 	}
 
@@ -303,9 +335,16 @@ public class ServerJarRet {
 	 * @throws IOException
 	 */
 	private void close(SelectionKey key) {
+		SocketChannel sc = (SocketChannel) key.channel();
+		Attachment attachment = (Attachment) key.attachment();
+		if (attachment != null) {
+			if (attachment.task != null) {
+				attachment.task.incrementPriority();
+			}
+		}
 		try {
+			sc.close();
 			logger.logInfos("Disconnected");
-			key.channel().close();
 		} catch (IOException e) {
 			// Nothing to do
 		}
