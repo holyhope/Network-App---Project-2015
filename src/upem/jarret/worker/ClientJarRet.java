@@ -208,7 +208,6 @@ public class ClientJarRet {
 		String result = null;
 		try {
 			result = worker.compute(taskNumber);
-			// TODO Always throw exception.
 		} catch (Exception e) {
 			setBufferError("Computation error");
 			return;

@@ -1,5 +1,8 @@
 package upem.jarret.server;
 
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.PrintWriter;
@@ -100,6 +103,11 @@ public class ServerJarRet {
 	 * @throws ClassNotFoundException
 	 */
 	public void launch() {
+		try {
+			createResultDirectory();
+		} catch (IllegalAccessException e) {
+			logger.logError("", e);
+		}
 		Set<SelectionKey> selectedKeys = selector.selectedKeys();
 		logger.logInfos("Server started");
 		while (!Thread.interrupted()) {
@@ -110,6 +118,23 @@ public class ServerJarRet {
 			}
 			processSelectedKeys(selectedKeys);
 			selectedKeys.clear();
+		}
+	}
+
+	private void createResultDirectory() throws IllegalAccessException {
+		File file = new File(pathResults);
+		if (!file.exists()) {
+			if (file.mkdirs()) {
+				logger.logInfos("Result directory created ("
+						+ file.getAbsolutePath() + ")");
+			} else {
+				throw new IllegalAccessException(
+						"Cannot create result directory");
+			}
+		} else if (!file.isDirectory()) {
+			throw new IllegalAccessException("Result path is not a directory");
+		} else if (!file.canWrite()) {
+			throw new IllegalAccessException("Cannot write in result directory");
 		}
 	}
 
@@ -250,16 +275,15 @@ public class ServerJarRet {
 			attachment.bb.clear();
 			if (!validResult(map)) {
 				addAnswerHeader(attachment.bb, "400 Bad Request");
+				logger.logWarning("Result from "
+						+ ((SocketChannel) key.channel()).getRemoteAddress()
+						+ " is not valid json.");
 				return;
 			}
-			// TODO build corect path
-			String path = pathResults + "/" + attachment.task.getJobId() + "-"
-					+ attachment.task.getJobId();
 			try {
-				saveResult(path, key, map);
-				logger.logInfos("Result saved in " + path);
+				saveResult(key, map);
 			} catch (IOException e) {
-				logger.logError("Cannot write result in " + path, e);
+				logger.logError("Cannot write result", e);
 			}
 			attachment.task = null;
 			addAnswerHeader(attachment.bb, "200 OK");
@@ -269,17 +293,42 @@ public class ServerJarRet {
 	}
 
 	private boolean validResult(Map<String, Object> map) {
-		// TODO Check map content
-		return true;
+		System.out.println(map);
+		String requiredFields[] = { "JobTaskNumber", "WorkerVersionNumber",
+				"WorkerURL", "WorkerClassName", "JobId", "ClientId" };
+		for (String field : requiredFields) {
+			if (!map.containsKey(field)) {
+				return false;
+			}
+		}
+		String oneOfFields[] = { "Error", "Answer" };
+		for (String field : oneOfFields) {
+			if (map.containsKey(field)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
-	private void saveResult(String path, SelectionKey key,
-			Map<String, Object> map) throws IOException {
-		PrintWriter writer = new PrintWriter(path, "UTF-8");
-		writer.println(map.get("ClientId") + "    "
-				+ ((SocketChannel) key.channel()).getRemoteAddress());
-		writer.println(map.get("Answer"));
-		writer.close();
+	private void saveResult(SelectionKey key, Map<String, Object> map)
+			throws IOException {
+		String path = pathResults + "/" + map.get("JobTaskNumber") + "-"
+				+ map.get("JobId");
+		File file = new File(path);
+		if (!file.exists() && !file.createNewFile()) {
+			throw new IOException("Cannot create a result file");
+		}
+
+		StringBuilder stringBuilder = new StringBuilder();
+		stringBuilder.append(map.get("ClientId")).append("    ")
+				.append(((SocketChannel) key.channel()).getRemoteAddress())
+				.append("    ")
+				.append(map.getOrDefault("Answer", map.get("Error")));
+		try (PrintWriter out = new PrintWriter(new BufferedWriter(
+				new FileWriter(path, true)))) {
+			out.println(stringBuilder.toString());
+		}
+		logger.logInfos("Result saved in " + path);
 	}
 
 	private void prepareNewTask(SelectionKey key) throws IOException {
