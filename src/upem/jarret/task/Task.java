@@ -4,14 +4,11 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class Task {
-	public String JobId;
-	public String WorkerVersionNumber;
-	public String WorkerURL;
-	public String WorkerClassName;
-	public String JobTaskNumber;
-
-	public Task() {
-	}
+	private String JobId;
+	private String WorkerVersionNumber;
+	private String WorkerURL;
+	private String WorkerClassName;
+	private String JobTaskNumber;
 
 	public String getJobId() {
 		return JobId;
@@ -53,5 +50,11 @@ public class Task {
 				.append(getWorkerClassName()).append(", Task=")
 				.append(getJobTaskNumber()).append("]");
 		return builder.toString();
+	}
+
+	public boolean isValid() {
+		return JobId != null && WorkerVersionNumber != null
+				&& WorkerURL != null && WorkerClassName != null
+				&& JobTaskNumber != null;
 	}
 }
