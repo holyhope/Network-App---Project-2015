@@ -48,7 +48,6 @@ public class TasksManager {
 		}
 
 		manager.tasks.sort(null);
-		System.out.println("Tasks " + manager.tasks);
 
 		return manager;
 	}
