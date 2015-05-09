@@ -47,9 +47,8 @@ public class ServerJarRet {
 		}
 		ServerJarRet server = ServerJarRet.construct(Integer.parseInt(args[0]),
 				"workerdescription.json");
-		server.launch();
-
 		try (Scanner scan = new Scanner(System.in)) {
+			ServerJarRet.help();
 			while (scan.hasNextLine()) {
 				try {
 					String command = scan.nextLine();
@@ -58,6 +57,7 @@ public class ServerJarRet {
 						break;
 					}
 					if (lowerCase.equals("start")) {
+						System.out.println("Starting server...");
 						try {
 							server.launch();
 						} catch (IllegalStateException e) {
@@ -65,11 +65,17 @@ public class ServerJarRet {
 						}
 						continue;
 					}
+					if (lowerCase.equals("help")) {
+						ServerJarRet.help();
+						continue;
+					}
 					if (lowerCase.equals("shutdown")) {
+						System.out.println("Stopping server...");
 						server.shutdown();
 						continue;
 					}
 					if (lowerCase.equals("shutdownnow")) {
+						System.out.println("Shutting down server...");
 						server.shutdownNow();
 						continue;
 					}
@@ -79,6 +85,7 @@ public class ServerJarRet {
 					}
 					String commands[] = lowerCase.split("\\s");
 					if (commands.length == 2 && commands[0].equals("loadtasks")) {
+						System.out.println("Adding tasks...");
 						server.addTasks(commands[1]);
 						continue;
 					}
@@ -88,6 +95,19 @@ public class ServerJarRet {
 				}
 			}
 		}
+	}
+
+	private static void help() {
+		System.out.println("Available commands:");
+		System.out.println("help             - Display this message.");
+		System.out
+				.println("info             - Display informations about server.");
+		System.out.println("start            - start the server.");
+		System.out
+				.println("shutdown         - Stop server after all current task.");
+		System.out.println("shutdownnow      - Stop server.");
+		System.out
+				.println("loadtasks <file> - Add tasks description to server.");
 	}
 
 	/**
@@ -517,7 +537,6 @@ public class ServerJarRet {
 	 * @throws InterruptedException
 	 */
 	public void shutdown() {
-		System.out.println("Stopping...");
 		logger.logInfos("Shutdown command received");
 		isShutdown = true;
 		while (isRunning()) {
@@ -544,7 +563,6 @@ public class ServerJarRet {
 	 * Kill all connection and stop server.
 	 */
 	public void shutdownNow() {
-		System.out.println("Shutting down now...");
 		serverThread.interrupt();
 	}
 

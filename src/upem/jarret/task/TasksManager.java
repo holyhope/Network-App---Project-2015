@@ -20,7 +20,6 @@ public class TasksManager {
 	}
 
 	public TaskServer nextTask() throws NoTaskException {
-		tasks.sort(null);
 		if (tasks.isEmpty()) {
 			throw new NoTaskException();
 		}
@@ -30,6 +29,7 @@ public class TasksManager {
 		} catch (IllegalAccessException e) {
 			throw new NoTaskException();
 		}
+		tasks.sort(null);
 		return task;
 	}
 
@@ -40,7 +40,7 @@ public class TasksManager {
 						+ "JobPriority: " + t.getJobPriority()));
 	}
 
-	public boolean addTask(TaskServer task) {
+	private boolean addTask(TaskServer task) {
 		return tasks.add(task);
 	}
 
@@ -70,6 +70,6 @@ public class TasksManager {
 				stringBuilder = new StringBuilder();
 			}
 		}
-
+		tasks.sort(null);
 	}
 }
