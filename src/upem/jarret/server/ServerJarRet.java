@@ -17,6 +17,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Scanner;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import upem.jarret.task.NoTaskException;
 import upem.jarret.task.TaskServer;
@@ -36,11 +37,8 @@ public class ServerJarRet {
 	private static final long TIMEOUT = 1000;
 	private static final int BUFFER_SIZE = 4096;
 	private static final Charset CHARSET_UTF8 = Charset.forName("UTF-8");
-	private static final int COMBEBACK = 300;
-	private static Thread serverThread;
+	private static final int COMBEBACK_IN_SECONDS = 300;
 
-	// TODO Handle worker priority and more than one task in
-	// workerdescription.json
 	public static void main(String[] args) throws NumberFormatException,
 			IOException, InterruptedException {
 		if (1 != args.length) {
@@ -49,22 +47,17 @@ public class ServerJarRet {
 		}
 		ServerJarRet server = ServerJarRet.construct(Integer.parseInt(args[0]),
 				"workerdescription.json");
-		serverThread = new Thread(() -> {
-			server.launch();
-		});
-		serverThread.start();
+		server.launch();
 
 		try (Scanner scan = new Scanner(System.in)) {
 			while (scan.hasNextLine()) {
 				String line = scan.nextLine();
 				if (line.toLowerCase().equals("shutdown")) {
-					System.out.println("Server is shuting down !");
 					server.shutdown();
 					return;
 
 				}
 				if (line.toLowerCase().equals("shutdownnow")) {
-					System.out.println("Server is shuting down Now !");
 					server.shutdownNow();
 					return;
 				}
@@ -97,9 +90,11 @@ public class ServerJarRet {
 	private final Selector selector;
 	private final ServerSocketChannel serverSocketChannel;
 	private final String pathResults;
+	private final Thread serverThread;
 
 	private boolean isShutdown = false;
 	private TasksManager taskManager;
+	private final AtomicBoolean running = new AtomicBoolean(false);
 
 	private ServerJarRet(int port) throws IOException {
 		this(port, "results");
@@ -112,6 +107,26 @@ public class ServerJarRet {
 		serverSocketChannel.configureBlocking(false);
 		serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
 		this.pathResults = pathResults;
+
+		this.serverThread = new Thread(() -> {
+			try {
+				Set<SelectionKey> selectedKeys = selector.selectedKeys();
+				logger.logInfos("Server started");
+				while (!Thread.interrupted()
+						&& (!isShutdown || selectedKeys.size() > 1)) {
+					try {
+						selector.select(TIMEOUT);
+					} catch (IOException e) {
+						e.printStackTrace(System.err);
+					}
+					processSelectedKeys(selectedKeys);
+					selectedKeys.clear();
+				}
+			} finally {
+				running.set(false);
+				logger.logInfos("Server stopped");
+			}
+		});
 	}
 
 	public static ServerJarRet construct(int port, String confFile)
@@ -123,7 +138,7 @@ public class ServerJarRet {
 	}
 
 	/**
-	 * Start the client.
+	 * Start the server.
 	 * 
 	 * @throws IOException
 	 * @throws InstantiationException
@@ -131,25 +146,17 @@ public class ServerJarRet {
 	 * @throws ClassNotFoundException
 	 */
 	public void launch() {
+		if (running.getAndSet(true)) {
+			logger.logError("Server already running");
+			return;
+		}
+		logger.logInfos("Server starting...");
 		try {
 			createResultDirectory();
 		} catch (IllegalAccessException e) {
-			logger.logError("", e);
+			logger.logError("Result folder is not valid", e);
 		}
-		Set<SelectionKey> selectedKeys = selector.selectedKeys();
-		logger.logInfos("Server started");
-		while (!Thread.interrupted()) {
-			if (isShutdown) {
-				break;
-			}
-			try {
-				selector.select(TIMEOUT);
-			} catch (IOException e) {
-				e.printStackTrace(System.err);
-			}
-			processSelectedKeys(selectedKeys);
-			selectedKeys.clear();
-		}
+		serverThread.start();
 	}
 
 	private void createResultDirectory() throws IllegalAccessException {
@@ -236,6 +243,11 @@ public class ServerJarRet {
 	}
 
 	private void doAccept(SelectionKey key) throws IOException {
+		// Do not accept new client after shutdown command
+		if (isShutdown) {
+			logger.logInfos("Client refused (server stopped)");
+			return;
+		}
 		// only the ServerSocketChannel is register in OP_ACCEPT
 		SocketChannel sc = serverSocketChannel.accept();
 		if (sc == null)
@@ -282,6 +294,12 @@ public class ServerJarRet {
 		String[] tokens = attachment.header.getResponse().split(" ");
 
 		if (tokens[0].equals("GET") && tokens[1].equals("TaskWorker")) {
+			// Do not accept new request after shutdown command
+			if (isShutdown) {
+				logger.logInfos("New task request refused");
+				close(key);
+				return;
+			}
 			logger.logInfos("Task request received");
 			prepareNewTask(key);
 		} else if (tokens[0].equals("POST") && tokens[1].equals("Answer")) {
@@ -347,8 +365,12 @@ public class ServerJarRet {
 		String path = pathResults + "/" + map.get("JobTaskNumber") + "-"
 				+ map.get("JobId");
 		File file = new File(path);
-		if (!file.exists() && !file.createNewFile()) {
-			throw new IOException("Cannot create a result file");
+		if (!file.exists()) {
+			if (file.createNewFile()) {
+				logger.logInfos("Result file created");
+			} else {
+				throw new IOException("Cannot create a result file");
+			}
 		}
 
 		StringBuilder stringBuilder = new StringBuilder();
@@ -372,7 +394,7 @@ public class ServerJarRet {
 		} catch (NoTaskException e) {
 			logger.logWarning("No more tasks to compute");
 			Map<String, Object> map = new HashMap<String, Object>();
-			map.put("ComeBackInSeconds", COMBEBACK);
+			map.put("ComeBackInSeconds", COMBEBACK_IN_SECONDS);
 			setBufferAnswer(attachment.bb, map);
 		}
 	}
@@ -447,6 +469,11 @@ public class ServerJarRet {
 		}
 		if (!attachment.bb.hasRemaining()) {
 			logger.logInfos("Response sent");
+			// Do not accept new request after shutdown command
+			if (isShutdown && attachment.task == null) {
+				close(key);
+				return;
+			}
 			key.attach(new Attachment());
 			key.interestOps(SelectionKey.OP_READ);
 			logger.logInfos("Now listenning...");
@@ -454,21 +481,47 @@ public class ServerJarRet {
 		attachment.bb.compact();
 	}
 
-	private void shutdown() throws IOException, InterruptedException {
+	/**
+	 * Check if server is currently running.
+	 * 
+	 * @return true if server is running.
+	 */
+	public boolean isRunning() {
+		return running.get();
+	}
+
+	/**
+	 * Shutdown server. It won't accept new client or new task request.
+	 * 
+	 * @throws IOException
+	 * @throws InterruptedException
+	 */
+	public void shutdown() {
+		System.out.println("Stopping...");
+		logger.logInfos("Shutdown command received");
 		isShutdown = true;
-		while (serverThread.isAlive()) {
+		while (isRunning()) {
 		}
-		serverSocketChannel.close();
 	}
 
-	private void shutdownNow() throws IOException {
+	/**
+	 * Kill all connection and stop server.
+	 */
+	public void shutdownNow() {
+		System.out.println("Shutting down now...");
 		serverThread.interrupt();
-		serverSocketChannel.close();
 	}
 
-	private void info() {
-		System.out.println("There is " + (selector.keys().size() - 1)
-				+ " client(s) connected");
+	/**
+	 * Display informations about server on standard output.
+	 */
+	public void info() {
+		if (!isRunning()) {
+			System.out.println("Server is not running.");
+		} else {
+			System.out.println("There is " + (selector.keys().size() - 1)
+					+ " client(s) connected");
+		}
 		taskManager.info();
 	}
 }
