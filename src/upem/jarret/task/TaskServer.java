@@ -24,10 +24,11 @@ public class TaskServer extends TaskWorker implements Comparable<TaskServer> {
 	public String toString() {
 		StringBuilder builder = new StringBuilder();
 		builder.append("TaskWorker [jobId=").append(getJobId())
-				.append(", workerVersion=").append(getWorkerVersionNumber())
-				.append(", workerURL=").append(getWorkerURL())
-				.append(", workerClassName=").append(getWorkerClassName())
-				.append(", task=").append(getJobTaskNumber()).append("]")
+				.append(", WorkerVersionNumber=")
+				.append(getWorkerVersionNumber()).append(", WorkerURL=")
+				.append(getWorkerURL()).append(", WorkerClassName=")
+				.append(getWorkerClassName()).append(", JobTaskNumber=")
+				.append(getJobTaskNumber()).append("]")
 				.append(", description=").append(getJobDescription())
 				.append(", jobPriority=").append(getJobPriority()).append("]");
 		return builder.toString();

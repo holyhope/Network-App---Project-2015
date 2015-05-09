@@ -51,19 +51,40 @@ public class ServerJarRet {
 
 		try (Scanner scan = new Scanner(System.in)) {
 			while (scan.hasNextLine()) {
-				String line = scan.nextLine();
-				if (line.toLowerCase().equals("shutdown")) {
-					server.shutdown();
-					return;
-
-				}
-				if (line.toLowerCase().equals("shutdownnow")) {
-					server.shutdownNow();
-					return;
-				}
-
-				if (line.toLowerCase().equals("info")) {
-					server.info();
+				try {
+					String command = scan.nextLine();
+					String lowerCase = command.toLowerCase();
+					if (lowerCase.equals("quit")) {
+						break;
+					}
+					if (lowerCase.equals("start")) {
+						try {
+							server.launch();
+						} catch (IllegalStateException e) {
+							e.printStackTrace(System.out);
+						}
+						continue;
+					}
+					if (lowerCase.equals("shutdown")) {
+						server.shutdown();
+						continue;
+					}
+					if (lowerCase.equals("shutdownnow")) {
+						server.shutdownNow();
+						continue;
+					}
+					if (lowerCase.equals("info")) {
+						server.info();
+						continue;
+					}
+					String commands[] = lowerCase.split("\\s");
+					if (commands.length == 2 && commands[0].equals("loadtasks")) {
+						server.addTasks(commands[1]);
+						continue;
+					}
+				} catch (Exception e) {
+					// Nothing to do
+					e.printStackTrace(System.out);
 				}
 			}
 		}
@@ -132,7 +153,8 @@ public class ServerJarRet {
 	public static ServerJarRet construct(int port, String confFile)
 			throws IOException {
 		ServerJarRet server = new ServerJarRet(port);
-		server.taskManager = TasksManager.construct(confFile);
+		server.taskManager = new TasksManager();
+		server.taskManager.addTaskFromFile(confFile);
 
 		return server;
 	}
@@ -140,15 +162,13 @@ public class ServerJarRet {
 	/**
 	 * Start the server.
 	 * 
-	 * @throws IOException
-	 * @throws InstantiationException
-	 * @throws IllegalAccessException
-	 * @throws ClassNotFoundException
+	 * @throws IllegalStateException
+	 *             - if server already running.
 	 */
 	public void launch() {
 		if (running.getAndSet(true)) {
-			logger.logError("Server already running");
-			return;
+			logger.logError("Attempt to launch server, but it is already running");
+			throw new IllegalStateException("Server is already running");
 		}
 		logger.logInfos("Server starting...");
 		try {
@@ -501,6 +521,22 @@ public class ServerJarRet {
 		logger.logInfos("Shutdown command received");
 		isShutdown = true;
 		while (isRunning()) {
+		}
+	}
+
+	/**
+	 * Add tasks from file configuration to server.
+	 * 
+	 * @param fileConfig
+	 *            - path to file config.
+	 */
+	public void addTasks(String fileConfig) {
+		try {
+			taskManager.addTaskFromFile(fileConfig);
+			logger.logInfos("Tasks added");
+		} catch (IOException e) {
+			logger.logError("Tasks description file is not valid");
+			e.printStackTrace();
 		}
 	}
 

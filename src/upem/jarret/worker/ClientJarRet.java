@@ -174,26 +174,29 @@ public class ClientJarRet {
 	}
 
 	private void initializeTaskAndCompute() throws IOException {
-		// No taskWorker yet
-		requestNewTask();
-		try {
-			getRequestedTask();
-		} catch (IllegalStateException e) {
-			// Content is not fully received
-			return;
-		} catch (NoTaskException e) {
-			// No taskWorker to work on
-			logger.logInfos("Waiting...");
-			long time;
-			while (e.getUntil() > (time = System.currentTimeMillis())) {
-				try {
-					Thread.sleep(e.getUntil() - time);
-				} catch (InterruptedException e1) {
-					e1.printStackTrace();
+		while (taskWorker == null) {
+			// No taskWorker yet
+			requestNewTask();
+			try {
+				getRequestedTask();
+			} catch (IllegalStateException e) {
+				// Content is not fully received
+				return;
+			} catch (NoTaskException e) {
+				// No taskWorker to work on
+				logger.logInfos("Waiting "
+						+ ((e.getUntil() - System.currentTimeMillis()) / 1000)
+						+ " seconds...");
+				long time;
+				while (e.getUntil() > (time = System.currentTimeMillis())) {
+					try {
+						Thread.sleep(e.getUntil() - time);
+					} catch (InterruptedException e1) {
+						e1.printStackTrace();
+					}
 				}
+				endTask();
 			}
-			endTask();
-			return;
 		}
 		Worker worker;
 		try {
