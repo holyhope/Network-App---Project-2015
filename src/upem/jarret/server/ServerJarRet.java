@@ -44,18 +44,12 @@ public class ServerJarRet {
 			usage();
 			return;
 		}
-<<<<<<< HEAD
-		ServerJarRet server = ServerJarRet.construct(Integer.parseInt(args[0]),
-				"workerdescription.json");
-=======
 		ServerJarRet server = ServerJarRet.construct("workerdescription.json");
 		server.launch();
 
->>>>>>> refs/remotes/origin/master
 		try (Scanner scan = new Scanner(System.in)) {
-			ServerJarRet.help();
+			ServerJarRet.help(System.out);
 			while (scan.hasNextLine()) {
-<<<<<<< HEAD
 				try {
 					String command = scan.nextLine();
 					String lowerCase = command.toLowerCase();
@@ -72,7 +66,7 @@ public class ServerJarRet {
 						continue;
 					}
 					if (lowerCase.equals("help")) {
-						ServerJarRet.help();
+						ServerJarRet.help(System.out);
 						continue;
 					}
 					if (lowerCase.equals("shutdown")) {
@@ -98,37 +92,19 @@ public class ServerJarRet {
 				} catch (Exception e) {
 					// Nothing to do
 					e.printStackTrace(System.out);
-=======
-				String line = scan.nextLine();
-				if (line.toLowerCase().equals("shutdown")) {
-					server.shutdown();
-					return;
-
-				}
-				if (line.toLowerCase().equals("shutdownnow")) {
-					server.shutdownNow();
-					return;
-				}
-
-				if (line.toLowerCase().equals("info")) {
-					server.info();
->>>>>>> refs/remotes/origin/master
 				}
 			}
 		}
 	}
 
-	private static void help() {
-		System.out.println("Available commands:");
-		System.out.println("help             - Display this message.");
-		System.out
-				.println("info             - Display informations about server.");
-		System.out.println("start            - start the server.");
-		System.out
-				.println("shutdown         - Stop server after all current task.");
-		System.out.println("shutdownnow      - Stop server.");
-		System.out
-				.println("loadtasks <file> - Add tasks description to server.");
+	private static void help(PrintStream out) {
+		out.println("Available commands:");
+		out.println("help             - Display this message.");
+		out.println("info             - Display informations about server.");
+		out.println("start            - start the server.");
+		out.println("shutdown         - Stop server after all current task.");
+		out.println("shutdownnow      - Stop server.");
+		out.println("loadtasks <file> - Add tasks description to server.");
 	}
 
 	/**
