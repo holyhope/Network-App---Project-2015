@@ -37,7 +37,6 @@ public class ServerJarRet {
 	private static final long TIMEOUT = 1000;
 	private static final int BUFFER_SIZE = 4096;
 	private static final Charset CHARSET_UTF8 = Charset.forName("UTF-8");
-	private static final int COMBEBACK_IN_SECONDS = 300;
 
 	public static void main(String[] args) throws NumberFormatException,
 			IOException, InterruptedException {
@@ -45,46 +44,24 @@ public class ServerJarRet {
 			usage();
 			return;
 		}
-		ServerJarRet server = ServerJarRet.construct(Integer.parseInt(args[0]),
-				"workerdescription.json");
+		ServerJarRet server = ServerJarRet.construct("workerdescription.json");
 		server.launch();
 
 		try (Scanner scan = new Scanner(System.in)) {
 			while (scan.hasNextLine()) {
-				try {
-					String command = scan.nextLine();
-					String lowerCase = command.toLowerCase();
-					if (lowerCase.equals("quit")) {
-						break;
-					}
-					if (lowerCase.equals("start")) {
-						try {
-							server.launch();
-						} catch (IllegalStateException e) {
-							e.printStackTrace(System.out);
-						}
-						continue;
-					}
-					if (lowerCase.equals("shutdown")) {
-						server.shutdown();
-						continue;
-					}
-					if (lowerCase.equals("shutdownnow")) {
-						server.shutdownNow();
-						continue;
-					}
-					if (lowerCase.equals("info")) {
-						server.info();
-						continue;
-					}
-					String commands[] = lowerCase.split("\\s");
-					if (commands.length == 2 && commands[0].equals("loadtasks")) {
-						server.addTasks(commands[1]);
-						continue;
-					}
-				} catch (Exception e) {
-					// Nothing to do
-					e.printStackTrace(System.out);
+				String line = scan.nextLine();
+				if (line.toLowerCase().equals("shutdown")) {
+					server.shutdown();
+					return;
+
+				}
+				if (line.toLowerCase().equals("shutdownnow")) {
+					server.shutdownNow();
+					return;
+				}
+
+				if (line.toLowerCase().equals("info")) {
+					server.info();
 				}
 			}
 		}
@@ -107,27 +84,43 @@ public class ServerJarRet {
 		out.println("Usage: ServerJarRet <port>\n");
 	}
 
-	private final Logger logger = new Logger();
+	private final Logger logger;
 	private final Selector selector;
 	private final ServerSocketChannel serverSocketChannel;
 	private final String pathResults;
 	private final Thread serverThread;
+	private final int maxFileSize;
 
+	private int COMBEBACK_IN_SECONDS;
 	private boolean isShutdown = false;
 	private TasksManager taskManager;
 	private final AtomicBoolean running = new AtomicBoolean(false);
 
-	private ServerJarRet(int port) throws IOException {
-		this(port, "results");
-	}
+	private ServerJarRet(Map<String, Object> config) throws IOException {
+		int port;
+		String logInfoPath;
+		String logWarningPath;
+		String logErrorPath;
+		try {
+			port = (int) config.get("ServerPort");
+			logInfoPath = (String) config.get("LogInfoPath");
+			logWarningPath = (String) config.get("LogWarningPath");
+			logErrorPath = (String) config.get("LogErrorPath");
+			this.pathResults = (String) config.get("ResultPath");
+			this.maxFileSize = (int) config.get("MaxFileSize");
+			this.COMBEBACK_IN_SECONDS = (int) config
+					.get("COMBEBACK_IN_SECONDS");
+		} catch (Exception e) {
+			throw new IllegalStateException(
+					"JarRetConfig.json is not a valid file", e);
+		}
 
-	private ServerJarRet(int port, String pathResults) throws IOException {
+		logger = new Logger(logInfoPath, logWarningPath, logErrorPath);
 		selector = Selector.open();
 		serverSocketChannel = ServerSocketChannel.open();
 		serverSocketChannel.bind(new InetSocketAddress(port));
 		serverSocketChannel.configureBlocking(false);
 		serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
-		this.pathResults = pathResults;
 
 		this.serverThread = new Thread(() -> {
 			try {
@@ -150,13 +143,26 @@ public class ServerJarRet {
 		});
 	}
 
-	public static ServerJarRet construct(int port, String confFile)
-			throws IOException {
-		ServerJarRet server = new ServerJarRet(port);
+	public static ServerJarRet construct(String confFile) throws IOException {
+		Map<String, Object> config = readConfig();
+		ServerJarRet server = new ServerJarRet(config);
 		server.taskManager = new TasksManager();
 		server.taskManager.addTaskFromFile(confFile);
-
 		return server;
+	}
+
+	public static Map<String, Object> readConfig() {
+		Map<String, Object> map = new HashMap<String, Object>();
+		ObjectMapper mapper = new ObjectMapper();
+		File config = new File("JarRetConfig.json");
+		try {
+			map = mapper.readValue(config,
+					new TypeReference<HashMap<String, Object>>() {
+					});
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return map;
 	}
 
 	/**
