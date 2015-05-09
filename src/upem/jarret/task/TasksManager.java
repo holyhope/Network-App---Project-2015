@@ -2,6 +2,7 @@ package upem.jarret.task;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Scanner;
 
@@ -63,10 +64,14 @@ public class TasksManager {
 		return task;
 	}
 
-	public void info() {
+	public void info(PrintStream out) {
 		tasks.stream().forEach(
-				t -> System.out.println("JobId: " + t.getJobId()
-						+ "\tJobTaskNumber: " + t.getJobTaskNumber()
-						+ "\tJobPriority: " + t.getJobPriority()));
+				t -> out.println("JobId: " + t.getJobId() + "    "
+						+ "JobTaskNumber: " + t.getJobTaskNumber() + "    "
+						+ "JobPriority: " + t.getJobPriority()));
+	}
+
+	public boolean addTask(TaskServer task) {
+		return tasks.add(task);
 	}
 }

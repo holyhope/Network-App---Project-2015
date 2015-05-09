@@ -522,6 +522,6 @@ public class ServerJarRet {
 			System.out.println("There is " + (selector.keys().size() - 1)
 					+ " client(s) connected");
 		}
-		taskManager.info();
+		taskManager.info(System.out);
 	}
 }
