@@ -163,7 +163,7 @@ public class ServerJarRet {
 			logErrorPath = (String) config.get("LogErrorPath");
 			this.pathResults = (String) config.get("ResultPath");
 			this.maxFileSize = (int) config.get("MaxFileSize");
-			this.ComeBackInSeconds = (int) config.get("ComeBackInSeconds");
+			this.ComeBackInSeconds = (int) config.get("COMBEBACK_IN_SECONDS");
 		} catch (Exception e) {
 			throw new IllegalStateException(
 					"JarRetConfig.json is not a valid file", e);
@@ -405,7 +405,7 @@ public class ServerJarRet {
 
 		String[] tokens = attachment.header.getResponse().split(" ");
 
-		if (tokens[0].equals("GET") && tokens[1].equals("TaskWorker")) {
+		if (tokens[0].equals("GET") && tokens[1].equals("Task")) {
 			// Do not accept new request after shutdown command
 			if (isShutdown) {
 				logger.logInfos("New task request refused");
@@ -455,7 +455,6 @@ public class ServerJarRet {
 	}
 
 	private boolean validResult(Map<String, Object> map) {
-		System.out.println(map);
 		String requiredFields[] = { "JobTaskNumber", "WorkerVersionNumber",
 				"WorkerURL", "WorkerClassName", "JobId", "ClientId" };
 		for (String field : requiredFields) {
@@ -521,7 +520,6 @@ public class ServerJarRet {
 	}
 
 	private void addAnswerHeader(ByteBuffer bb, String code) throws IOException {
-		// TODO Build header correctly
 		String answer = "HTTP/1.1 " + code + "\r\n\r\n";
 		bb.put(Charset.defaultCharset().encode(answer));
 	}

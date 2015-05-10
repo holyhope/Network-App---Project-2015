@@ -376,7 +376,7 @@ public class ClientJarRet {
 		Map<String, String> fields = new HashMap<>();
 		fields.put("Host", sc.getRemoteAddress().toString());
 		HTTPHeader header = HTTPHeader.createRequestHeader(
-				"GET TaskWorker HTTP/1.1", fields);
+				"GET Task HTTP/1.1", fields);
 		bb.put(header.toBytes());
 		bb.flip();
 		logger.logInfos("Requesting new task...");
