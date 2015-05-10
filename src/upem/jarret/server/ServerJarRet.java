@@ -277,16 +277,16 @@ public class ServerJarRet {
 				}
 			} catch (IOException e) {
 				close(key);
-			} catch (Exception e1) {
+			} catch (Exception e) {
 				try {
 					logger.logWarning(
 							"An error with one client ("
 									+ ((SocketChannel) key.channel())
 											.getRemoteAddress() + ") occured",
-							e1);
-				} catch (Exception e2) {
-					logger.logError("Cannot identify client (" + key + ")", e2);
-					logger.logWarning("An error with one client occured", e1);
+							e);
+				} catch (Exception e1) {
+					logger.logError("Cannot identify client (" + key + ")", e1);
+					logger.logWarning("An error with one client occured", e);
 				}
 				close(key);
 			}
