@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
@@ -66,7 +67,7 @@ public class ServerJarRet {
 						continue;
 					}
 					if (lowerCase.equals("help")) {
-						ServerJarRet.help(System.out);
+						ServerJarRet.help();
 						continue;
 					}
 					if (lowerCase.equals("shutdown")) {
@@ -97,6 +98,19 @@ public class ServerJarRet {
 		}
 	}
 
+	/**
+	 * Display available commands in standard output.
+	 */
+	private static void help() {
+		help(System.out);
+	}
+
+	/**
+	 * Display available commands.
+	 * 
+	 * @param out
+	 *            - Where to display commands.
+	 */
 	private static void help(PrintStream out) {
 		out.println("Available commands:");
 		out.println("help             - Display this message.");
@@ -130,11 +144,12 @@ public class ServerJarRet {
 	private final String pathResults;
 	private final Thread serverThread;
 	private final int maxFileSize;
-
-	private int COMBEBACK_IN_SECONDS;
-	private boolean isShutdown = false;
-	private TasksManager taskManager;
 	private final AtomicBoolean running = new AtomicBoolean(false);
+	private final SocketAddress address;
+	private final int ComeBackInSeconds;
+	private final TasksManager taskManager;
+
+	private boolean isShutdown = false;
 
 	private ServerJarRet(Map<String, Object> config) throws IOException {
 		int port;
@@ -148,8 +163,7 @@ public class ServerJarRet {
 			logErrorPath = (String) config.get("LogErrorPath");
 			this.pathResults = (String) config.get("ResultPath");
 			this.maxFileSize = (int) config.get("MaxFileSize");
-			this.COMBEBACK_IN_SECONDS = (int) config
-					.get("COMBEBACK_IN_SECONDS");
+			this.ComeBackInSeconds = (int) config.get("ComeBackInSeconds");
 		} catch (Exception e) {
 			throw new IllegalStateException(
 					"JarRetConfig.json is not a valid file", e);
@@ -158,9 +172,8 @@ public class ServerJarRet {
 		logger = new Logger(logInfoPath, logWarningPath, logErrorPath);
 		selector = Selector.open();
 		serverSocketChannel = ServerSocketChannel.open();
-		serverSocketChannel.bind(new InetSocketAddress(port));
-		serverSocketChannel.configureBlocking(false);
-		serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
+		address = new InetSocketAddress(port);
+		taskManager = new TasksManager();
 
 		this.serverThread = new Thread(() -> {
 			try {
@@ -184,13 +197,23 @@ public class ServerJarRet {
 	}
 
 	public static ServerJarRet construct(String confFile) throws IOException {
-		Map<String, Object> config = readConfig();
-		ServerJarRet server = new ServerJarRet(config);
-		server.taskManager = new TasksManager();
+		ServerJarRet server = new ServerJarRet(readConfig());
+
+		server.serverSocketChannel.bind(server.address);
+		server.serverSocketChannel.configureBlocking(false);
+		server.serverSocketChannel.register(server.selector,
+				SelectionKey.OP_ACCEPT);
+
 		server.taskManager.addTaskFromFile(confFile);
+
 		return server;
 	}
 
+	/**
+	 * Read config file.
+	 * 
+	 * @return Map with key/value.
+	 */
 	public static Map<String, Object> readConfig() {
 		Map<String, Object> map = new HashMap<String, Object>();
 		ObjectMapper mapper = new ObjectMapper();
@@ -225,6 +248,12 @@ public class ServerJarRet {
 		serverThread.start();
 	}
 
+	/**
+	 * Create directory at pathResults location.
+	 * 
+	 * @throws IllegalAccessException
+	 *             - If cannot create folder.
+	 */
 	private void createResultDirectory() throws IllegalAccessException {
 		File file = new File(pathResults);
 		if (!file.exists()) {
@@ -299,15 +328,31 @@ public class ServerJarRet {
 		long lastActivity = System.currentTimeMillis();
 		TaskServer task;
 
+		/**
+		 * Mark that key is active at this moment.
+		 */
 		void setActive() {
 			lastActivity = System.currentTimeMillis();
 		}
 
+		/**
+		 * Check if key is inactive for more than TIMEOUT.
+		 * 
+		 * @return True if key timed out.
+		 */
 		boolean isTimeOut() {
 			return System.currentTimeMillis() - lastActivity > TIMEOUT;
 		}
 	}
 
+	/**
+	 * Accept new client and add attachment to its key.
+	 * 
+	 * @param key
+	 *            - ServerSocketChannel's key.
+	 * @throws IOException
+	 *             - If some I/O error occurs.
+	 */
 	private void doAccept(SelectionKey key) throws IOException {
 		// Do not accept new client after shutdown command
 		if (isShutdown) {
@@ -329,6 +374,7 @@ public class ServerJarRet {
 	 * @param key
 	 *            - selected key containing a SocketChannel.
 	 * @throws IOException
+	 *             - If some I/O error occurs.
 	 */
 	private void doRead(SelectionKey key) throws IOException {
 		// Client requests a new task
@@ -460,7 +506,7 @@ public class ServerJarRet {
 		} catch (NoTaskException e) {
 			logger.logWarning("No more tasks to compute");
 			Map<String, Object> map = new HashMap<String, Object>();
-			map.put("ComeBackInSeconds", COMBEBACK_IN_SECONDS);
+			map.put("ComeBackInSeconds", ComeBackInSeconds);
 			setBufferAnswer(attachment.bb, map);
 		}
 	}
