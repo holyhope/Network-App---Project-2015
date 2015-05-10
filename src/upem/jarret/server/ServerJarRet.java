@@ -455,7 +455,7 @@ public class ServerJarRet {
 		Attachment attachment = (Attachment) key.attachment();
 		try {
 			attachment.task = taskManager.nextTask();
-			logger.logInfos(attachment.task);
+			logger.logInfos("Selected task: " + attachment.task);
 			setBufferAnswer(attachment.bb, attachment.task.buildMap());
 		} catch (NoTaskException e) {
 			logger.logWarning("No more tasks to compute");
@@ -507,6 +507,7 @@ public class ServerJarRet {
 		SocketChannel sc = (SocketChannel) key.channel();
 		Attachment attachment = (Attachment) key.attachment();
 		if (attachment != null) {
+			// Task not completed, increase priority.
 			if (attachment.task != null) {
 				attachment.task.incrementPriority();
 			}

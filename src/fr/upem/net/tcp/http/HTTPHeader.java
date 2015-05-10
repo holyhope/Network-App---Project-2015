@@ -225,14 +225,9 @@ public class HTTPHeader {
 				&& fields.get("Transfer-Encoding").trim().equals("chunked");
 	}
 
-	// TODO check if the test is needed
 	public String toString() {
 		StringBuilder stringBuilder = new StringBuilder();
 		stringBuilder.append(response).append("\r\n");
-		/*if (code != 0) {
-			stringBuilder.append(version).append(" ").append(code)
-					.append("\r\n");
-		}*/
 		fields.forEach((k, v) -> {
 			stringBuilder.append(k).append(": ").append(v).append("\r\n");
 		});
