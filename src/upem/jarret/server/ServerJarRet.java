@@ -57,15 +57,6 @@ public class ServerJarRet {
 					if (lowerCase.equals("quit")) {
 						break;
 					}
-					if (lowerCase.equals("start")) {
-						System.out.println("Starting server...");
-						try {
-							server.launch();
-						} catch (IllegalStateException e) {
-							e.printStackTrace(System.out);
-						}
-						continue;
-					}
 					if (lowerCase.equals("help")) {
 						ServerJarRet.help();
 						continue;
@@ -115,7 +106,6 @@ public class ServerJarRet {
 		out.println("Available commands:");
 		out.println("help             - Display this message.");
 		out.println("info             - Display informations about server.");
-		out.println("start            - start the server.");
 		out.println("shutdown         - Stop server after all current task.");
 		out.println("shutdownnow      - Stop server.");
 		out.println("loadtasks <file> - Add tasks description to server.");
@@ -492,6 +482,10 @@ public class ServerJarRet {
 		try (PrintWriter out = new PrintWriter(new BufferedWriter(
 				new FileWriter(path, true)))) {
 			out.println(stringBuilder.toString());
+		}
+		if (file.length() >= maxFileSize) {
+			logger.logError("The size of " + file.getPath()
+					+ " exceeds limit given in config file");
 		}
 		logger.logInfos("Result saved in " + path);
 	}
