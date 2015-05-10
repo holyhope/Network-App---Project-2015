@@ -1,7 +1,6 @@
 package fr.upem.logger;
 
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.text.SimpleDateFormat;
@@ -14,8 +13,8 @@ public class Logger {
 	private final SimpleDateFormat dateFormatLog = new SimpleDateFormat(
 			"yyyy/MM/dd HH:mm:ss");
 
-	private Logger(PrintStream logInfoPath, PrintStream logWarningPath, PrintStream logErrorPath)
-			throws IOException {
+	private Logger(PrintStream logInfoPath, PrintStream logWarningPath,
+			PrintStream logErrorPath) {
 		this.outInfos = logInfoPath;
 		this.outWarning = logWarningPath;
 		this.outError = logErrorPath;
@@ -23,7 +22,7 @@ public class Logger {
 	}
 
 	public static Logger construct(String logInfoPath, String logWarningPath,
-			String logErrorPath) throws IOException, FileNotFoundException {
+			String logErrorPath) throws IOException {
 		PrintStream outInfos;
 		PrintStream outWarning;
 		PrintStream outError;
@@ -67,7 +66,7 @@ public class Logger {
 		}
 		return new Logger(outInfos, outWarning, outError);
 	}
-	
+
 	public static Logger construct() throws IOException {
 		return new Logger(System.out, System.err, System.err);
 	}

@@ -375,8 +375,8 @@ public class ClientJarRet {
 	private void requestNewTask() throws IOException {
 		Map<String, String> fields = new HashMap<>();
 		fields.put("Host", sc.getRemoteAddress().toString());
-		HTTPHeader header = HTTPHeader.createRequestHeader(
-				"GET Task HTTP/1.1", fields);
+		HTTPHeader header = HTTPHeader.createRequestHeader("GET Task HTTP/1.1",
+				fields);
 		bb.put(header.toBytes());
 		bb.flip();
 		logger.logInfos("Requesting new task...");

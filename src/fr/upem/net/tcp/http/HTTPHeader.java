@@ -1,6 +1,7 @@
 package fr.upem.net.tcp.http;
 
-import java.nio.ByteBuffer;
+import static fr.upem.net.tcp.http.HTTPException.ensure;
+
 import java.nio.charset.Charset;
 import java.util.Arrays;
 import java.util.Collections;
@@ -8,8 +9,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
-
-import static fr.upem.net.tcp.http.HTTPException.ensure;
 
 /**
  * @author carayol Class representing a HTTP header
@@ -79,7 +78,7 @@ public class HTTPHeader {
 		}
 		return new HTTPHeader(response, version, code, fieldsCopied);
 	}
-	
+
 	public String getResponse() {
 		return response;
 	}
