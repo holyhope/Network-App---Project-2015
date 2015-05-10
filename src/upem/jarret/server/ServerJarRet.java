@@ -45,7 +45,8 @@ public class ServerJarRet {
 			usage();
 			return;
 		}
-		ServerJarRet server = ServerJarRet.construct("workerdescription.json");
+		ServerJarRet server = ServerJarRet.construct("JarRetConfig.json",
+				"workerdescription.json");
 		server.launch();
 
 		try (Scanner scan = new Scanner(System.in)) {
@@ -56,15 +57,6 @@ public class ServerJarRet {
 					String lowerCase = command.toLowerCase();
 					if (lowerCase.equals("quit")) {
 						break;
-					}
-					if (lowerCase.equals("start")) {
-						System.out.println("Starting server...");
-						try {
-							server.launch();
-						} catch (IllegalStateException e) {
-							e.printStackTrace(System.out);
-						}
-						continue;
 					}
 					if (lowerCase.equals("help")) {
 						ServerJarRet.help();
@@ -90,6 +82,7 @@ public class ServerJarRet {
 						server.addTasks(commands[1]);
 						continue;
 					}
+					System.err.println("Unknown command...");
 				} catch (Exception e) {
 					// Nothing to do
 					e.printStackTrace(System.out);
@@ -115,7 +108,6 @@ public class ServerJarRet {
 		out.println("Available commands:");
 		out.println("help             - Display this message.");
 		out.println("info             - Display informations about server.");
-		out.println("start            - start the server.");
 		out.println("shutdown         - Stop server after all current task.");
 		out.println("shutdownnow      - Stop server.");
 		out.println("loadtasks <file> - Add tasks description to server.");
@@ -196,15 +188,16 @@ public class ServerJarRet {
 		});
 	}
 
-	public static ServerJarRet construct(String confFile) throws IOException {
-		ServerJarRet server = new ServerJarRet(readConfig());
+	public static ServerJarRet construct(String confFile, String confTask)
+			throws IOException {
+		ServerJarRet server = new ServerJarRet(readConfig(confFile));
 
 		server.serverSocketChannel.bind(server.address);
 		server.serverSocketChannel.configureBlocking(false);
 		server.serverSocketChannel.register(server.selector,
 				SelectionKey.OP_ACCEPT);
 
-		server.taskManager.addTaskFromFile(confFile);
+		server.taskManager.addTaskFromFile(confTask);
 
 		return server;
 	}
@@ -214,10 +207,10 @@ public class ServerJarRet {
 	 * 
 	 * @return Map with key/value.
 	 */
-	public static Map<String, Object> readConfig() {
+	private static Map<String, Object> readConfig(String path) {
 		Map<String, Object> map = new HashMap<String, Object>();
 		ObjectMapper mapper = new ObjectMapper();
-		File config = new File("JarRetConfig.json");
+		File config = new File(path);
 		try {
 			map = mapper.readValue(config,
 					new TypeReference<HashMap<String, Object>>() {
@@ -492,6 +485,10 @@ public class ServerJarRet {
 		try (PrintWriter out = new PrintWriter(new BufferedWriter(
 				new FileWriter(path, true)))) {
 			out.println(stringBuilder.toString());
+		}
+		if (file.length() >= maxFileSize) {
+			logger.logError("The size of " + file.getPath()
+					+ " exceeds limit given in config file");
 		}
 		logger.logInfos("Result saved in " + path);
 	}
