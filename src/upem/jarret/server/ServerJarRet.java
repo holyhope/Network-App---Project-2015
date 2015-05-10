@@ -45,7 +45,8 @@ public class ServerJarRet {
 			usage();
 			return;
 		}
-		ServerJarRet server = ServerJarRet.construct("workerdescription.json");
+		ServerJarRet server = ServerJarRet.construct("JarRetConfig.json",
+				"workerdescription.json");
 		server.launch();
 
 		try (Scanner scan = new Scanner(System.in)) {
@@ -81,6 +82,7 @@ public class ServerJarRet {
 						server.addTasks(commands[1]);
 						continue;
 					}
+					System.err.println("Unknown command...");
 				} catch (Exception e) {
 					// Nothing to do
 					e.printStackTrace(System.out);
@@ -186,15 +188,16 @@ public class ServerJarRet {
 		});
 	}
 
-	public static ServerJarRet construct(String confFile) throws IOException {
-		ServerJarRet server = new ServerJarRet(readConfig());
+	public static ServerJarRet construct(String confFile, String confTask)
+			throws IOException {
+		ServerJarRet server = new ServerJarRet(readConfig(confFile));
 
 		server.serverSocketChannel.bind(server.address);
 		server.serverSocketChannel.configureBlocking(false);
 		server.serverSocketChannel.register(server.selector,
 				SelectionKey.OP_ACCEPT);
 
-		server.taskManager.addTaskFromFile(confFile);
+		server.taskManager.addTaskFromFile(confTask);
 
 		return server;
 	}
@@ -204,10 +207,10 @@ public class ServerJarRet {
 	 * 
 	 * @return Map with key/value.
 	 */
-	public static Map<String, Object> readConfig() {
+	private static Map<String, Object> readConfig(String path) {
 		Map<String, Object> map = new HashMap<String, Object>();
 		ObjectMapper mapper = new ObjectMapper();
-		File config = new File("JarRetConfig.json");
+		File config = new File(path);
 		try {
 			map = mapper.readValue(config,
 					new TypeReference<HashMap<String, Object>>() {
