@@ -1,6 +1,7 @@
 package fr.upem.logger;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.text.SimpleDateFormat;
@@ -13,50 +14,62 @@ public class Logger {
 	private final SimpleDateFormat dateFormatLog = new SimpleDateFormat(
 			"yyyy/MM/dd HH:mm:ss");
 
-	public Logger(String logInfoPath, String logWarningPath, String logErrorPath)
+	private Logger(PrintStream logInfoPath, PrintStream logWarningPath, PrintStream logErrorPath)
 			throws IOException {
+		this.outInfos = logInfoPath;
+		this.outWarning = logWarningPath;
+		this.outError = logErrorPath;
+
+	}
+
+	public static Logger construct(String logInfoPath, String logWarningPath,
+			String logErrorPath) throws IOException, FileNotFoundException {
+		PrintStream outInfos;
+		PrintStream outWarning;
+		PrintStream outError;
 		if (null == logInfoPath || logInfoPath.isEmpty()) {
-			this.outInfos = System.out;
+			outInfos = System.out;
 		} else {
 			File file = new File(logInfoPath);
 			if (!file.exists()) {
+				file.getParentFile().mkdirs();
 				if (!file.createNewFile()) {
 					throw new IOException("Cannot create logInfo file");
 				}
 			}
-			this.outInfos = new PrintStream(file);
+			outInfos = new PrintStream(file);
 		}
 
 		if (null == logWarningPath || logWarningPath.isEmpty()) {
-			this.outWarning = System.err;
+			outWarning = System.err;
 		} else {
 			File file = new File(logWarningPath);
 			if (!file.exists()) {
+				file.getParentFile().mkdirs();
 				if (!file.createNewFile()) {
 					throw new IOException("Cannot create logWarning file");
 				}
 			}
-			this.outWarning = new PrintStream(file);
+			outWarning = new PrintStream(file);
 		}
 
 		if (null == logErrorPath || logErrorPath.isEmpty()) {
-			this.outError = System.err;
+			outError = System.err;
 		} else {
 			File file = new File(logErrorPath);
 			if (!file.exists()) {
+				file.getParentFile().mkdirs();
 				if (!file.createNewFile()) {
 					throw new IOException("Cannot create logError file");
 				}
 			}
-			this.outError = new PrintStream(file);
+			outError = new PrintStream(file);
 		}
-
+		return new Logger(outInfos, outWarning, outError);
 	}
-
-	public Logger() {
-		this.outInfos = System.out;
-		this.outWarning = System.err;
-		this.outError = System.err;
+	
+	public static Logger construct() throws IOException {
+		return new Logger(System.out, System.err, System.err);
 	}
 
 	public boolean logInfos(Object message) {

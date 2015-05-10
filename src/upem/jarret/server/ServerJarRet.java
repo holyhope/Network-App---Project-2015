@@ -169,7 +169,7 @@ public class ServerJarRet {
 					"JarRetConfig.json is not a valid file", e);
 		}
 
-		logger = new Logger(logInfoPath, logWarningPath, logErrorPath);
+		logger = Logger.construct(logInfoPath, logWarningPath, logErrorPath);
 		selector = Selector.open();
 		serverSocketChannel = ServerSocketChannel.open();
 		address = new InetSocketAddress(port);

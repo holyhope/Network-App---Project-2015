@@ -1,8 +1,8 @@
 {
  "ServerPort" : 8080,
- "LogInfoPath" : "info.log",
- "LogWarningPath" : "warning.log",
- "LogErrorPath" : "error.log",
+ "LogInfoPath" : "log/info.log",
+ "LogWarningPath" : "log/warning.log",
+ "LogErrorPath" : "log/error.log",
  "ResultPath" : "results",
  "MaxFileSize" : 5,
  "COMBEBACK_IN_SECONDS" : 300

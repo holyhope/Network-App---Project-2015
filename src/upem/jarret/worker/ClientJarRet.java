@@ -72,7 +72,7 @@ public class ClientJarRet {
 		out.println("Usage: ClientJarRet <clientID> <serverAddress> <serverPort>\n");
 	}
 
-	private final Logger logger = new Logger();
+	private final Logger logger = Logger.construct();
 	private final Thread thread;
 	private final String clientID;
 	private final SocketChannel sc;
