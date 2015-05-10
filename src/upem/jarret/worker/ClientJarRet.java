@@ -33,7 +33,7 @@ import fr.upem.net.tcp.http.HTTPReader;
 
 public class ClientJarRet {
 	private static final int BUFFER_SIZE = 4096;
-	private static final Charset CHARSET_UTF8 = Charset.forName("UTF-8");
+	private static final Charset CHARSET = Charset.forName("UTF-8");
 
 	public static void main(String[] args) {
 		if (3 != args.length) {
@@ -147,6 +147,12 @@ public class ClientJarRet {
 		return running.get();
 	}
 
+	/**
+	 * Send result to server.
+	 * 
+	 * @throws IOException
+	 *             - If some I/O error occurs.
+	 */
 	private void sendAnswer() throws IOException {
 		bb.flip();
 		sc.write(bb);
@@ -154,6 +160,12 @@ public class ClientJarRet {
 		bb.clear();
 	}
 
+	/**
+	 * Read final response from server then reset job's data.
+	 * 
+	 * @throws IOException
+	 *             - If some I/O error occurs.
+	 */
 	private void getAnswerAndReset() throws IOException {
 		// Answer sent
 		HTTPReader reader = new HTTPReader(sc, bb);
@@ -173,6 +185,12 @@ public class ClientJarRet {
 		}
 	}
 
+	/**
+	 * Get task from server, execute it then fill ByteBuffer.
+	 * 
+	 * @throws IOException
+	 *             - If some I/O error occurs.
+	 */
 	private void initializeTaskAndCompute() throws IOException {
 		while (taskWorker == null) {
 			// No taskWorker yet
@@ -236,6 +254,14 @@ public class ClientJarRet {
 		return;
 	}
 
+	/**
+	 * Fill taskWorker field with response in ByteBuffer.
+	 * 
+	 * @throws NoTaskException
+	 * @throws IllegalStateException
+	 * @throws IOException
+	 *             - If some I/O error occurs.
+	 */
 	private void getRequestedTask() throws NoTaskException,
 			IllegalStateException, IOException {
 		HTTPReader reader = new HTTPReader(sc, bb);
@@ -243,6 +269,14 @@ public class ClientJarRet {
 		taskWorker = newTaskWorker(header, reader);
 	}
 
+	/**
+	 * Fill ByteBuffer with a error message, ready to send to server.
+	 * 
+	 * @param errorMessage
+	 *            - Message to send.
+	 * @throws IOException
+	 *             - If some I/O error occurs.
+	 */
 	private void setBufferError(String errorMessage) throws IOException {
 		ByteBuffer resultBb = constructResponse("Error", errorMessage);
 		addSendHeader(resultBb.position());
@@ -251,6 +285,14 @@ public class ClientJarRet {
 		logger.logWarning("Generating error: " + errorMessage);
 	}
 
+	/**
+	 * Fill ByteBuffer with a result message, ready to send to server.
+	 * 
+	 * @param answer
+	 *            - Result to send.
+	 * @throws IOException
+	 *             - If some I/O error occurs.
+	 */
 	private void setBufferAnswer(Object answer) throws IOException {
 		try {
 			ByteBuffer resultBb = constructResponse("Answer", answer);
@@ -264,6 +306,17 @@ public class ClientJarRet {
 		}
 	}
 
+	/**
+	 * Construct a response for the server.
+	 * 
+	 * @param key
+	 *            - <i>Error</i>, <i>Answer</i>, ... This is the context of msg.
+	 * @param msg
+	 *            - Message to send.
+	 * @return Built response.
+	 * @throws JsonProcessingException
+	 *             - If msg is not correct for the JSON mapper.
+	 */
 	private ByteBuffer constructResponse(String key, Object msg)
 			throws JsonProcessingException {
 		Map<String, Object> map = taskWorker.buildMap();
@@ -272,25 +325,42 @@ public class ClientJarRet {
 		return getEncodedResponse(map);
 	}
 
+	/**
+	 * Encode response in a new ByteBuffer.
+	 * 
+	 * @param map
+	 *            - Datas to encode.
+	 * @return Encoded response.
+	 * @throws JsonProcessingException
+	 *             - If map is not correct for the JSON mapper.
+	 */
 	private ByteBuffer getEncodedResponse(Map<String, Object> map)
 			throws JsonProcessingException {
 		ObjectMapper mapper = new ObjectMapper();
-		ByteBuffer bb = CHARSET_UTF8.encode(mapper.writeValueAsString(map));
+		ByteBuffer bb = CHARSET.encode(mapper.writeValueAsString(map));
 		bb.compact();
 		return bb;
 	}
 
+	/**
+	 * 
+	 * @param size
+	 * @throws IOException
+	 */
 	private void addSendHeader(int size) throws IOException {
 		Map<String, String> fields = new HashMap<>();
 		fields.put("Host", sc.getRemoteAddress().toString());
 		fields.put("Content-Type",
-				"application/json; charset=" + CHARSET_UTF8.name());
+				"application/json; charset=" + CHARSET.name());
 		fields.put("Content-Length", size + "");
 		HTTPHeader header = HTTPHeader.createRequestHeader(
 				"POST Answer HTTP/1.1", fields);
 		bb.put(header.toBytes());
 	}
 
+	/**
+	 * Call this once all work is done.
+	 */
 	private void endTask() {
 		taskWorker = null;
 	}
