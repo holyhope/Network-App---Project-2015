@@ -2,8 +2,10 @@ package upem.jarret.server;
 
 import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.net.InetSocketAddress;
@@ -35,82 +37,28 @@ import fr.upem.net.tcp.http.HTTPReaderServer;
 import fr.upem.net.tcp.http.HTTPStateException;
 
 public class ServerJarRet {
-	private static final long TIMEOUT = 1000;
+	/**
+	 * Milliseconds that client can be connected without being active.
+	 */
+	private static final long TIMEOUT = 10000;
 	private static final int BUFFER_SIZE = 4096;
 	private static final Charset CHARSET_UTF8 = Charset.forName("UTF-8");
 
-	public static void main(String[] args) throws NumberFormatException,
-			IOException, InterruptedException {
-		if (1 != args.length) {
+	public static void main(String[] args) {
+		if (1 < args.length) {
 			usage();
 			return;
 		}
-		ServerJarRet server = ServerJarRet.construct("JarRetConfig.json",
-				"workerdescription.json");
-		server.launch();
-
-		try (Scanner scan = new Scanner(System.in)) {
-			ServerJarRet.help(System.out);
-			while (scan.hasNextLine()) {
-				try {
-					String command = scan.nextLine();
-					String lowerCase = command.toLowerCase();
-					if (lowerCase.equals("quit")) {
-						break;
-					}
-					if (lowerCase.equals("help")) {
-						ServerJarRet.help();
-						continue;
-					}
-					if (lowerCase.equals("shutdown")) {
-						System.out.println("Stopping server...");
-						server.shutdown();
-						continue;
-					}
-					if (lowerCase.equals("shutdownnow")) {
-						System.out.println("Shutting down server...");
-						server.shutdownNow();
-						continue;
-					}
-					if (lowerCase.equals("info")) {
-						server.info();
-						continue;
-					}
-					String commands[] = lowerCase.split("\\s");
-					if (commands.length == 2 && commands[0].equals("loadtasks")) {
-						System.out.println("Adding tasks...");
-						server.addTasks(commands[1]);
-						continue;
-					}
-					System.err.println("Unknown command...");
-				} catch (Exception e) {
-					// Nothing to do
-					e.printStackTrace(System.out);
-				}
-			}
+		String confTask = args.length == 1 ? args[0] : "workerdescription.json";
+		ServerJarRet server;
+		try {
+			server = ServerJarRet.construct("JarRetConfig.json", confTask);
+		} catch (IllegalArgumentException | IOException e) {
+			e.printStackTrace(System.err);
+			return;
 		}
-	}
-
-	/**
-	 * Display available commands in standard output.
-	 */
-	private static void help() {
-		help(System.out);
-	}
-
-	/**
-	 * Display available commands.
-	 * 
-	 * @param out
-	 *            - Where to display commands.
-	 */
-	private static void help(PrintStream out) {
-		out.println("Available commands:");
-		out.println("help             - Display this message.");
-		out.println("info             - Display informations about server.");
-		out.println("shutdown         - Stop server after all current task.");
-		out.println("shutdownnow      - Stop server.");
-		out.println("loadtasks <file> - Add tasks description to server.");
+		server.launch();
+		server.interact(System.in);
 	}
 
 	/**
@@ -127,20 +75,37 @@ public class ServerJarRet {
 	 *            - Where to display usage infos.
 	 */
 	public static void usage(PrintStream out) {
-		out.println("Usage: ServerJarRet <port>\n");
+		out.println("Usage: ServerJarRet [path/to/workerdescription.json\n");
 	}
 
+	/**
+	 * Logger, used to display all infos, warnings and errors.
+	 */
 	private final Logger logger;
+	/**
+	 * Max result file size (in bytes).
+	 */
+	private final long maxFileSize;
+	/**
+	 * Number of seconds that clients must wait when server has no more tasks to
+	 * send.
+	 */
+	private final int ComeBackInSeconds;
+	/**
+	 * Path to folder where result files are written.
+	 */
+	private final String pathResults;
+
 	private final Selector selector;
 	private final ServerSocketChannel serverSocketChannel;
-	private final String pathResults;
 	private final Thread serverThread;
-	private final int maxFileSize;
 	private final AtomicBoolean running = new AtomicBoolean(false);
 	private final SocketAddress address;
-	private final int ComeBackInSeconds;
 	private final TasksManager taskManager;
 
+	/**
+	 * True if server received a shutdown signal.
+	 */
 	private boolean isShutdown = false;
 
 	private ServerJarRet(Map<String, Object> config) throws IOException {
@@ -154,7 +119,7 @@ public class ServerJarRet {
 			logWarningPath = (String) config.get("LogWarningPath");
 			logErrorPath = (String) config.get("LogErrorPath");
 			this.pathResults = (String) config.get("ResultPath");
-			this.maxFileSize = (int) config.get("MaxFileSize");
+			this.maxFileSize = (long) config.get("MaxFileSize");
 			this.ComeBackInSeconds = (int) config.get("COMBEBACK_IN_SECONDS");
 		} catch (Exception e) {
 			throw new IllegalStateException(
@@ -188,16 +153,32 @@ public class ServerJarRet {
 		});
 	}
 
-	public static ServerJarRet construct(String confFile, String confTask)
-			throws IOException {
-		ServerJarRet server = new ServerJarRet(readConfig(confFile));
+	/**
+	 * Create a new server, initialized with files.
+	 * 
+	 * @param confFilePath
+	 *            - path to server config file.
+	 * @param confTaskPath
+	 *            - path to tasks description.
+	 * @return new ServerJarRet
+	 * @throws IOException
+	 *             - If arguments are not valid.
+	 */
+	public static ServerJarRet construct(String confFilePath,
+			String confTaskPath) throws IOException {
+		ServerJarRet server = new ServerJarRet(readConfig(confFilePath));
 
 		server.serverSocketChannel.bind(server.address);
 		server.serverSocketChannel.configureBlocking(false);
 		server.serverSocketChannel.register(server.selector,
 				SelectionKey.OP_ACCEPT);
 
-		server.taskManager.addTaskFromFile(confTask);
+		try {
+			server.taskManager.addTaskFromFile(confTaskPath);
+		} catch (FileNotFoundException e) {
+			throw new IllegalArgumentException(
+					"Task configuration file does not exists", e);
+		}
 
 		return server;
 	}
@@ -466,9 +447,9 @@ public class ServerJarRet {
 
 	private void saveResult(SelectionKey key, Map<String, Object> map)
 			throws IOException {
-		String path = pathResults + "/" + map.get("JobTaskNumber") + "-"
-				+ map.get("JobId");
+		String path = getResultPath(map);
 		File file = new File(path);
+
 		if (!file.exists()) {
 			if (file.createNewFile()) {
 				logger.logInfos("Result file created");
@@ -477,20 +458,42 @@ public class ServerJarRet {
 			}
 		}
 
+		String resultContent = getResultContent(key, map);
+		ByteBuffer bb = Charset.defaultCharset().encode(resultContent);
+		if (maxFileSize > 0) {
+			int remaining = (int) (maxFileSize - file.length());
+			if (remaining <= 0) {
+				logger.logError("The size of " + file.getPath()
+						+ " exceeds limit given in config file");
+				return;
+			}
+			if (remaining < bb.limit()) {
+				bb.limit(remaining);
+			}
+		}
+		try (PrintWriter out = new PrintWriter(new BufferedWriter(
+				new FileWriter(path, true)))) {
+			out.println(bb.asCharBuffer());
+		}
+		logger.logInfos("Result saved in " + path);
+	}
+
+	private String getResultContent(SelectionKey key, Map<String, Object> map)
+			throws IOException {
 		StringBuilder stringBuilder = new StringBuilder();
 		stringBuilder.append(map.get("ClientId")).append("    ")
 				.append(((SocketChannel) key.channel()).getRemoteAddress())
 				.append("    ")
 				.append(map.getOrDefault("Answer", map.get("Error")));
-		try (PrintWriter out = new PrintWriter(new BufferedWriter(
-				new FileWriter(path, true)))) {
-			out.println(stringBuilder.toString());
-		}
-		if (file.length() >= maxFileSize) {
-			logger.logError("The size of " + file.getPath()
-					+ " exceeds limit given in config file");
-		}
-		logger.logInfos("Result saved in " + path);
+		return stringBuilder.toString();
+	}
+
+	private String getResultPath(Map<String, Object> map) {
+		StringBuilder stringBuilder = new StringBuilder();
+		stringBuilder.append(pathResults).append("/")
+				.append(map.get("JobTaskNumber")).append("-")
+				.append(map.get("JobId")).append(".result");
+		return stringBuilder.toString();
 	}
 
 	private void prepareNewTask(SelectionKey key) throws IOException {
@@ -622,7 +625,8 @@ public class ServerJarRet {
 			taskManager.addTaskFromFile(fileConfig);
 			logger.logInfos("Tasks added");
 		} catch (IOException e) {
-			logger.logError("Tasks description file is not valid");
+			logger.logError("Tasks description file (" + fileConfig
+					+ ") is not valid");
 			e.printStackTrace();
 		}
 	}
@@ -645,5 +649,74 @@ public class ServerJarRet {
 					+ " client(s) connected");
 		}
 		taskManager.info(System.out);
+	}
+
+	/**
+	 * Display available commands in standard output.
+	 */
+	public static void help() {
+		help(System.out);
+	}
+
+	/**
+	 * Display available commands.
+	 * 
+	 * @param out
+	 *            - Where to display commands.
+	 */
+	public static void help(PrintStream out) {
+		out.println("Available commands:");
+		out.println("help             - Display this message.");
+		out.println("info             - Display informations about server.");
+		out.println("shutdown         - Stop server after all current task.");
+		out.println("shutdownnow      - Stop server.");
+		out.println("loadtasks <file> - Add tasks description to server.");
+	}
+
+	/**
+	 * Scan input stream and execute commands on server. Display available
+	 * commands with ServerJarRet.help().
+	 * 
+	 * @param in
+	 *            - InputStream to scan
+	 */
+	public void interact(InputStream in) {
+		try (Scanner scan = new Scanner(in)) {
+			ServerJarRet.help(System.out);
+			while (isRunning() && scan.hasNextLine()) {
+				try {
+					String command = scan.nextLine();
+					String lowerCase = command.toLowerCase();
+					if (lowerCase.equals("help")) {
+						ServerJarRet.help();
+						continue;
+					}
+					if (lowerCase.equals("shutdown")) {
+						System.out.println("Stopping server...");
+						shutdown();
+						continue;
+					}
+					if (lowerCase.equals("shutdownnow")) {
+						System.out.println("Shutting down server...");
+						shutdownNow();
+						continue;
+					}
+					if (lowerCase.equals("info")) {
+						info();
+						continue;
+					}
+					String commands[] = lowerCase.split("\\s");
+					if (commands.length == 2 && commands[0].equals("loadtasks")) {
+						System.out.println("Adding tasks...");
+						addTasks(commands[1]);
+						continue;
+					}
+					System.err.println("Unknown command...");
+				} catch (Exception e) {
+					// Nothing to do
+					e.printStackTrace(System.out);
+				}
+			}
+		}
 	}
 }

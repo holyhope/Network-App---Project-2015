@@ -1,6 +1,7 @@
 package upem.jarret.task;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.util.ArrayList;
@@ -44,8 +45,8 @@ public class TasksManager {
 		return tasks.add(task);
 	}
 
-	public void addTaskFromFile(String file) throws JsonParseException,
-			JsonMappingException, IOException {
+	public void addTaskFromFile(String filePath) throws JsonParseException,
+			JsonMappingException, IOException, FileNotFoundException {
 		ObjectMapper mapper = new ObjectMapper();
 
 		// http://stackoverflow.com/questions/23469784/com-fasterxml-jackson-databind-exc-unrecognizedpropertyexception-unrecognized-f
@@ -53,7 +54,8 @@ public class TasksManager {
 		mapper.setVisibilityChecker(VisibilityChecker.Std.defaultInstance()
 				.withFieldVisibility(JsonAutoDetect.Visibility.ANY));
 
-		try (Scanner scanner = new Scanner(new File(file))) {
+		File file = new File(filePath);
+		try (Scanner scanner = new Scanner(file)) {
 			StringBuilder stringBuilder = new StringBuilder();
 			while (scanner.hasNextLine()) {
 				String string = scanner.nextLine();
