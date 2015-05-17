@@ -1,4 +1,4 @@
-package fr.upem.jarret.server;
+package upem.jarret.server;
 
 import java.io.BufferedWriter;
 import java.io.File;
@@ -22,18 +22,18 @@ import java.util.Scanner;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import upem.jarret.task.NoTaskException;
+import upem.jarret.task.TaskServer;
+import upem.jarret.task.TasksManager;
+import upem.logger.Logger;
+import upem.net.tcp.http.HTTPException;
+import upem.net.tcp.http.HTTPHeader;
+import upem.net.tcp.http.HTTPReaderServer;
+import upem.net.tcp.http.HTTPStateException;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
-import fr.upem.jarret.task.NoTaskException;
-import fr.upem.jarret.task.TaskServer;
-import fr.upem.jarret.task.TasksManager;
-import fr.upem.logger.Logger;
-import fr.upem.net.tcp.http.HTTPException;
-import fr.upem.net.tcp.http.HTTPHeader;
-import fr.upem.net.tcp.http.HTTPReaderServer;
-import fr.upem.net.tcp.http.HTTPStateException;
 
 public class ServerJarRet {
 	/**

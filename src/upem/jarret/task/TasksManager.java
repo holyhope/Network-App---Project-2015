@@ -1,4 +1,4 @@
-package fr.upem.jarret.task;
+package upem.jarret.task;
 
 import java.io.File;
 import java.io.FileNotFoundException;

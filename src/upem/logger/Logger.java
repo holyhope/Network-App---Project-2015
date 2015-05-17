@@ -1,4 +1,4 @@
-package fr.upem.logger;
+package upem.logger;
 
 import java.io.File;
 import java.io.IOException;

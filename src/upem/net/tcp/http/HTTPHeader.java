@@ -1,6 +1,6 @@
-package fr.upem.net.tcp.http;
+package upem.net.tcp.http;
 
-import static fr.upem.net.tcp.http.HTTPException.ensure;
+import static upem.net.tcp.http.HTTPException.ensure;
 
 import java.nio.charset.Charset;
 import java.util.Arrays;

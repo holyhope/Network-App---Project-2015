@@ -1,6 +1,5 @@
-package fr.upem.jarret.task;
+package upem.jarret.task;
 
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class TaskServer extends TaskWorker implements Comparable<TaskServer> {
 	private String JobDescription;

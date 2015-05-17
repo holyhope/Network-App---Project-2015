@@ -1,4 +1,4 @@
-package fr.upem.jarret.worker;
+package upem.jarret.worker;
 
 import java.io.IOException;
 import java.io.PrintStream;
@@ -12,6 +12,13 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import upem.jarret.task.NoTaskException;
+import upem.jarret.task.TaskWorker;
+import upem.logger.Logger;
+import upem.net.tcp.http.HTTPException;
+import upem.net.tcp.http.HTTPHeader;
+import upem.net.tcp.http.HTTPReader;
+
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParseException;
@@ -22,13 +29,6 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.introspect.VisibilityChecker;
-
-import fr.upem.jarret.task.NoTaskException;
-import fr.upem.jarret.task.TaskWorker;
-import fr.upem.logger.Logger;
-import fr.upem.net.tcp.http.HTTPException;
-import fr.upem.net.tcp.http.HTTPHeader;
-import fr.upem.net.tcp.http.HTTPReader;
 
 public class ClientJarRet {
 	private static final int BUFFER_SIZE = 4096;

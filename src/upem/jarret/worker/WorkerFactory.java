@@ -1,4 +1,4 @@
-package fr.upem.jarret.worker;
+package upem.jarret.worker;
 
 import java.net.MalformedURLException;
 import java.net.URL;

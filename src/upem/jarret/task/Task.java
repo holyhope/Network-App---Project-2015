@@ -1,4 +1,4 @@
-package fr.upem.jarret.task;
+package upem.jarret.task;
 
 import java.util.HashMap;
 import java.util.Map;

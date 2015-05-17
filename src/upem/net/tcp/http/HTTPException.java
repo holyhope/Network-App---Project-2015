@@ -1,4 +1,4 @@
-package fr.upem.net.tcp.http;
+package upem.net.tcp.http;
 
 import java.io.IOException;
 
