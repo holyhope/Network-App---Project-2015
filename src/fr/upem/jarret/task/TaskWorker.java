@@ -1,9 +1,9 @@
-package upem.jarret.task;
+package fr.upem.jarret.task;
 
 import java.net.MalformedURLException;
 
-import upem.jarret.worker.Worker;
-import upem.jarret.worker.WorkerFactory;
+import fr.upem.jarret.worker.Worker;
+import fr.upem.jarret.worker.WorkerFactory;
 
 public class TaskWorker extends Task {
 

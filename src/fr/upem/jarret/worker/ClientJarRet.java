@@ -1,4 +1,4 @@
-package upem.jarret.worker;
+package fr.upem.jarret.worker;
 
 import java.io.IOException;
 import java.io.PrintStream;
@@ -12,9 +12,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import upem.jarret.task.NoTaskException;
-import upem.jarret.task.TaskWorker;
-
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParseException;
@@ -26,6 +23,8 @@ import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.introspect.VisibilityChecker;
 
+import fr.upem.jarret.task.NoTaskException;
+import fr.upem.jarret.task.TaskWorker;
 import fr.upem.logger.Logger;
 import fr.upem.net.tcp.http.HTTPException;
 import fr.upem.net.tcp.http.HTTPHeader;

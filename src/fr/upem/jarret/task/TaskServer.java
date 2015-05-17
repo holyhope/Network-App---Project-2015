@@ -1,4 +1,4 @@
-package upem.jarret.task;
+package fr.upem.jarret.task;
 
 public class TaskServer extends TaskWorker implements Comparable<TaskServer> {
 	private String JobDescription;

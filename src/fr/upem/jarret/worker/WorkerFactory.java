@@ -1,4 +1,4 @@
-package upem.jarret.worker;
+package fr.upem.jarret.worker;
 
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -10,7 +10,7 @@ public class WorkerFactory {
 	 * @param url
 	 *            location of the jar
 	 * @param className
-	 *            name of the class implementing upem.jarret.worker.Worker
+	 *            name of the class implementing fr.upem.jarret.worker.Worker
 	 * @return An instance of className from the jar located at URL
 	 * @throws java.net.MalformedURLException
 	 *             if the url is malformed
@@ -20,7 +20,7 @@ public class WorkerFactory {
 	 * @throws java.lang.InstantiationException
 	 *             if the creation of the instance failed
 	 * @throws java.lang.ClassCastException
-	 *             (unchecked) if the cast to upem.jarret.worker.Worker failed
+	 *             (unchecked) if the cast to fr.upem.jarret.worker.Worker failed
 	 */
 	public static Worker getWorker(String url, String className)
 			throws MalformedURLException, ClassNotFoundException,
