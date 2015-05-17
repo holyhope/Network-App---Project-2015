@@ -57,4 +57,17 @@ public class Task {
 				&& WorkerURL != null && WorkerClassName != null
 				&& JobTaskNumber != null;
 	}
+
+	@Override
+	public boolean equals(Object obj) {
+		if (!(obj instanceof Task)) {
+			return false;
+		}
+		Task task = (Task) obj;
+		return task.JobId.equals(JobId)
+				&& task.WorkerVersionNumber.equals(WorkerVersionNumber)
+				&& task.WorkerURL.equals(WorkerURL)
+				&& task.WorkerClassName.equals(WorkerClassName)
+				&& task.JobTaskNumber.equals(JobTaskNumber);
+	}
 }

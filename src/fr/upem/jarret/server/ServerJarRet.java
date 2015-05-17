@@ -41,7 +41,7 @@ public class ServerJarRet {
 	 */
 	private static final long TIMEOUT = 10000;
 	private static final int BUFFER_SIZE = 4096;
-	private static final Charset CHARSET_UTF8 = Charset.forName("UTF-8");
+	private static final Charset CHARSET = Charset.forName("UTF-8");
 
 	public static void main(String[] args) {
 		if (1 < args.length) {
@@ -98,7 +98,7 @@ public class ServerJarRet {
 	private final Selector selector;
 	private final ServerSocketChannel serverSocketChannel;
 	private final Thread serverThread;
-	private final AtomicBoolean running = new AtomicBoolean(false);
+	private final AtomicBoolean isRunning = new AtomicBoolean(false);
 	private final SocketAddress address;
 	private final TasksManager taskManager;
 
@@ -146,7 +146,7 @@ public class ServerJarRet {
 					selectedKeys.clear();
 				}
 			} finally {
-				running.set(false);
+				isRunning.set(false);
 				logger.logInfos("Server stopped");
 			}
 		});
@@ -183,6 +183,26 @@ public class ServerJarRet {
 	}
 
 	/**
+	 * Start the server.
+	 * 
+	 * @throws IllegalStateException
+	 *             - if server already isRunning.
+	 */
+	public void launch() {
+		if (isRunning.getAndSet(true)) {
+			logger.logError("Attempt to launch server, but it is already isRunning");
+			throw new IllegalStateException("Server is already isRunning");
+		}
+		logger.logInfos("Server starting...");
+		try {
+			createResultDirectory();
+		} catch (IllegalAccessException e) {
+			logger.logError("Result folder is not valid", e);
+		}
+		serverThread.start();
+	}
+
+	/**
 	 * Read config file.
 	 * 
 	 * @return Map with key/value.
@@ -199,26 +219,6 @@ public class ServerJarRet {
 			e.printStackTrace();
 		}
 		return map;
-	}
-
-	/**
-	 * Start the server.
-	 * 
-	 * @throws IllegalStateException
-	 *             - if server already running.
-	 */
-	public void launch() {
-		if (running.getAndSet(true)) {
-			logger.logError("Attempt to launch server, but it is already running");
-			throw new IllegalStateException("Server is already running");
-		}
-		logger.logInfos("Server starting...");
-		try {
-			createResultDirectory();
-		} catch (IllegalAccessException e) {
-			logger.logError("Result folder is not valid", e);
-		}
-		serverThread.start();
 	}
 
 	/**
@@ -297,7 +297,6 @@ public class ServerJarRet {
 
 	private static class Attachment {
 		final ByteBuffer bb = ByteBuffer.allocate(BUFFER_SIZE);
-		HTTPHeader header;
 		long lastActivity = System.currentTimeMillis();
 		TaskServer task;
 
@@ -359,8 +358,9 @@ public class ServerJarRet {
 			return;
 		}
 		attachment.setActive();
+		HTTPHeader header;
 		try {
-			attachment.header = reader.readHeader();
+			header = reader.readHeader();
 		} catch (HTTPStateException e) {
 			// HTTP header is not complete
 			return;
@@ -371,12 +371,12 @@ public class ServerJarRet {
 		}
 
 		// Check for request content
-		if (attachment.bb.position() < attachment.header.getContentLength()) {
+		if (attachment.bb.position() < header.getContentLength()) {
 			// Not all response yet.
 			return;
 		}
 
-		String[] tokens = attachment.header.getResponse().split(" ");
+		String[] tokens = header.getResponse().split(" ");
 
 		if (tokens[0].equals("GET") && tokens[1].equals("Task")) {
 			// Do not accept new request after shutdown command
@@ -398,7 +398,7 @@ public class ServerJarRet {
 	private void computeAnswer(SelectionKey key) {
 		Attachment attachment = (Attachment) key.attachment();
 		attachment.bb.flip();
-		String json = CHARSET_UTF8.decode(attachment.bb).toString();
+		String json = CHARSET.decode(attachment.bb).toString();
 		Map<String, Object> map = new HashMap<String, Object>();
 		ObjectMapper mapper = new ObjectMapper();
 		try {
@@ -512,7 +512,7 @@ public class ServerJarRet {
 	private void addSendHeader(ByteBuffer bb, int size) throws IOException {
 		Map<String, String> fields = new HashMap<>();
 		fields.put("Content-Type",
-				"application/json; charset=" + CHARSET_UTF8.name());
+				"application/json; charset=" + CHARSET.name());
 		fields.put("Content-Length", size + "");
 		HTTPHeader header = HTTPHeader.create("HTTP/1.1 200 OK", fields);
 		bb.put(header.toBytes());
@@ -534,7 +534,7 @@ public class ServerJarRet {
 	private ByteBuffer getEncodedResponse(Map<String, Object> map)
 			throws JsonProcessingException {
 		ObjectMapper mapper = new ObjectMapper();
-		ByteBuffer bb = CHARSET_UTF8.encode(mapper.writeValueAsString(map));
+		ByteBuffer bb = CHARSET.encode(mapper.writeValueAsString(map));
 		bb.compact();
 		return bb;
 	}
@@ -552,7 +552,7 @@ public class ServerJarRet {
 		if (attachment != null) {
 			// Task not completed, increase priority.
 			if (attachment.task != null) {
-				attachment.task.incrementPriority();
+				taskManager.addTask(attachment.task);
 			}
 		}
 		try {
@@ -592,12 +592,12 @@ public class ServerJarRet {
 	}
 
 	/**
-	 * Check if server is currently running.
+	 * Check if server is currently isRunning.
 	 * 
-	 * @return true if server is running.
+	 * @return true if server is isRunning.
 	 */
 	public boolean isRunning() {
-		return running.get();
+		return isRunning.get();
 	}
 
 	/**
@@ -642,7 +642,7 @@ public class ServerJarRet {
 	 */
 	public void info() {
 		if (!isRunning()) {
-			System.out.println("Server is not running.");
+			System.out.println("Server is not isRunning.");
 		} else {
 			System.out.println("There is " + (selector.keys().size() - 1)
 					+ " client(s) connected");

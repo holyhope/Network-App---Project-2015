@@ -1,23 +1,25 @@
 package fr.upem.jarret.task;
 
+import java.util.concurrent.atomic.AtomicInteger;
+
 public class TaskServer extends TaskWorker implements Comparable<TaskServer> {
 	private String JobDescription;
-	private int JobPriority;
+	private final AtomicInteger JobPriority = new AtomicInteger();
 
 	public String getJobDescription() {
 		return JobDescription;
 	}
 
 	public int getJobPriority() {
-		return JobPriority;
+		return JobPriority.get();
 	}
 
 	public void decrementPriority() throws IllegalAccessException {
-		if (JobPriority == 0) {
+		if (JobPriority.getAndDecrement() == 0) {
+			JobPriority.incrementAndGet();
 			throw new IllegalAccessException(
 					"Task priority cannot be negative.");
 		}
-		JobPriority--;
 	}
 
 	@Override
@@ -39,11 +41,12 @@ public class TaskServer extends TaskWorker implements Comparable<TaskServer> {
 		return o.getJobPriority() - this.getJobPriority();
 	}
 
+	@Override
 	public boolean isValid() {
-		return super.isValid() && JobPriority >= 0;
+		return super.isValid() && JobPriority.get() >= 0;
 	}
 
 	public void incrementPriority() {
-		JobPriority++;
+		JobPriority.incrementAndGet();
 	}
 }

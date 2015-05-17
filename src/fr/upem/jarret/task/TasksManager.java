@@ -41,7 +41,11 @@ public class TasksManager {
 						+ "JobPriority: " + t.getJobPriority()));
 	}
 
-	private boolean addTask(TaskServer task) {
+	public boolean addTask(TaskServer task) {
+		if (tasks.contains(task)) {
+			task.incrementPriority();
+			return true;
+		}
 		return tasks.add(task);
 	}
 

@@ -77,7 +77,7 @@ public class ClientJarRet {
 	private final SocketChannel sc;
 	private final InetSocketAddress serverAddress;
 	private final ByteBuffer bb = ByteBuffer.allocate(BUFFER_SIZE);
-	private final AtomicBoolean running = new AtomicBoolean(false);
+	private final AtomicBoolean isRunning = new AtomicBoolean(false);
 
 	private TaskWorker taskWorker;
 
@@ -112,7 +112,7 @@ public class ClientJarRet {
 			} catch (IOException e) {
 				e.printStackTrace(System.err);
 			} finally {
-				running.set(false);
+				isRunning.set(false);
 				logger.logWarning("Client terminated.");
 			}
 		};
@@ -123,8 +123,8 @@ public class ClientJarRet {
 	 * Start the client.
 	 */
 	public void start() {
-		if (running.getAndSet(true)) {
-			throw new IllegalStateException("Client already running.");
+		if (isRunning.getAndSet(true)) {
+			throw new IllegalStateException("Client already isRunning.");
 		}
 		thread.start();
 	}
@@ -138,12 +138,12 @@ public class ClientJarRet {
 	}
 
 	/**
-	 * Check if client is running.
+	 * Check if client is isRunning.
 	 * 
-	 * @return True if client is running.
+	 * @return True if client is isRunning.
 	 */
 	public boolean isrunning() {
-		return running.get();
+		return isRunning.get();
 	}
 
 	/**
